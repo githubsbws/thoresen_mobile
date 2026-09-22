@@ -1,0 +1,27 @@
+# Frontend
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+
+# Frontend env
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Backend
+thorconn-api/node_modules/
+thorconn-api/dist/
+
+# Backend env
+thorconn-api/.env
+thorconn-api/.env.*
+!thorconn-api/.env.example
+
+# General
+*.log
+.DS_Store
+Thumbs.db
+
+# Large videos
+frontend/assets/videos/*.mp4

@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "ThorConn",
+    "slug": "thorconn",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "thorconn",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.thorconn.app"
+    },
+    "android": {
+      "package": "com.thorconn.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-video",
+      "expo-asset",
+      "expo-font",
+      "expo-localization",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
