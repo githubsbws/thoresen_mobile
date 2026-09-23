@@ -14,7 +14,7 @@ export interface FAQData {
 }
 
 export async function getFaq(langId: number): Promise<FAQData> {
-  const res = await api.get<FAQData>('/v1/faq', {
+  const res = await api.get<FAQData>('/faq', {
     params: {
       langId,
     },
