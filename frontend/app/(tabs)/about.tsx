@@ -1,4 +1,4 @@
-import React, { useEffect,useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,28 +7,54 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  Linking,
 } from 'react-native';
-import RenderHTML from 'react-native-render-html';
-import { useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import AppHeader from '../../src/components/AppHeader';
-import { getAbout,AboutData } from '../../src/services/about';
+import { getAbout, AboutData } from '../../src/services/about';
 
 const PRIMARY = '#001B74';
 const RED = '#B00000';
 const BG = '#F4F6FA';
 
-const logo = require('../../assets/images/banner/logo-new.png');
+function cleanAboutText(text: string | null | undefined): string {
+  if (!text) return '';
 
+  return (
+    text
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/&rsquo;/g, "'")
+      .replace(/&lsquo;/g, "'")
+      .replace(/&ldquo;/g, '“')
+      .replace(/&rdquo;/g, '”')
+      .replace(/&amp;nbsp;/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&rsquo;/g, "'")
+      .replace(/&lsquo;/g, "'")
+      .replace(/&ldquo;/g, '“')
+      .replace(/&rdquo;/g, '”')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<br\s*[\/]?>/gi, '\n')
+      .replace(/<img[^>]*>/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n+/g, '\n\n')
+      .trim()
+  );
+}
 
 export default function AboutScreen() {
   const { t } = useTranslation();
   const [menuVisible, setMenuVisible] = useState(false);
-  const { width } = useWindowDimensions();
 
   const [about, setAbout] = useState<AboutData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +66,6 @@ export default function AboutScreen() {
   const loadAbout = async () => {
     try {
       const data = await getAbout(1);
-
       setAbout(data.about);
     } catch (error) {
       console.log('ABOUT ERROR', error);
@@ -74,7 +99,7 @@ export default function AboutScreen() {
     if (route === 'Library') router.push('/(tabs)/library' as any);
     if (route === 'Terms & Conditions') router.push('/(tabs)/terms' as any);
     if (route === 'Report') router.push('/(tabs)/report' as any);
-    if (route === 'Mess-room') router.push('/(tabs)/Mess-room'as any);
+    if (route === 'Mess-room') router.push('/(tabs)/Mess-room' as any);
   };
 
   return (
@@ -90,7 +115,7 @@ export default function AboutScreen() {
               <View style={styles.imageCard}>
                 <Image
                   source={{
-                    uri: 'https://thorconn.com/uploads/tiny_uploads/ABOUT%20US3.jpg',
+                    uri: 'https://splash247.com/wp-content/uploads/2015/03/Thoresen-Thai-Agencies.jpg',
                   }}
                   style={styles.shipImage}
                   resizeMode="cover"
@@ -118,17 +143,9 @@ export default function AboutScreen() {
             </Text>
 
             {about?.detail && (
-              <RenderHTML
-                contentWidth={width - 64}
-                source={{
-                  html: about.detail,
-                }}
-                baseStyle={{
-                  color: '#374151',
-                  fontSize: 13,
-                  lineHeight: 22,
-                }}
-              />
+              <Text style={styles.aboutContent}>
+                {cleanAboutText(about.detail)}
+              </Text>
             )}
           </View>
 
@@ -180,58 +197,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
-
-  topHeader: {
-    height: 78,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  logo: {
-    width: 170,
-    height: 52,
-  },
-  headerActions: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 8,
-},
-
-headerIconBtn: {
-  width: 36,
-  height: 36,
-  borderRadius: 10,
-  backgroundColor: '#F3F6FB',
-  alignItems: 'center',
-  justifyContent: 'center',
-  position: 'relative',
-},
-
-notificationDot: {
-  position: 'absolute',
-  top: 8,
-  right: 8,
-  width: 7,
-  height: 7,
-  borderRadius: 4,
-  backgroundColor: '#E30613',
-  borderWidth: 1.5,
-  borderColor: '#FFFFFF',
-},
-
-  breadcrumb: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 14,
-    marginHorizontal: 18,
-    marginBottom: 12,
-    fontWeight: '700',
-  },
-
   card: {
     marginHorizontal: 16,
     backgroundColor: '#fff',
@@ -245,7 +210,6 @@ notificationDot: {
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
   },
-
   heroWrap: {
     minHeight: 390,
     position: 'relative',
@@ -294,7 +258,6 @@ notificationDot: {
     borderWidth: 1,
     borderColor: '#EEF0F5',
   },
-
   redTitle: {
     fontSize: 16,
     color: '#E30613',
@@ -317,7 +280,6 @@ notificationDot: {
     textAlign: 'center',
     lineHeight: 16,
   },
-
   decorRow: {
     marginTop: 20,
     width: 64,
@@ -342,7 +304,6 @@ notificationDot: {
     right: 0,
     bottom: 0,
   },
-
   imageCaption: {
     textAlign: 'center',
     color: '#9CA3AF',
@@ -352,30 +313,13 @@ notificationDot: {
     marginBottom: 18,
     fontWeight: '800',
   },
-
-  mainText: {
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 23,
-    marginBottom: 12,
-  },
-  paragraph: {
+  aboutContent: {
     fontSize: 13,
-    color: '#374151',
     lineHeight: 22,
+    color: '#374151',
+    marginTop: 6,
     marginBottom: 12,
-    textAlign: 'justify',
   },
-  bold: {
-    fontWeight: '900',
-    color: PRIMARY,
-  },
-  link: {
-    color: '#0066CC',
-    textDecorationLine: 'underline',
-    fontWeight: '800',
-  },
-
   footer: {
     marginTop: 20,
     height: 38,
@@ -390,7 +334,6 @@ notificationDot: {
     fontSize: 11,
     fontWeight: '800',
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
