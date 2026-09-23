@@ -182,7 +182,7 @@ export default function FAQScreen() {
                 <View style={styles.emptyBox}>
                   <Ionicons name="search-outline" size={42} color="#CBD5E1" />
                   <Text style={styles.emptyTitle}>
-                    {lang === 'en' ? 'No FAQ found' : 'ไม่พบคำถาม'}
+                    {lang === 'en' ? 'No FAQ Found' : 'ไม่พบคำถาม'}
                   </Text>
                   <Text style={styles.emptyText}>
                     {lang === 'en'
