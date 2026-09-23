@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  Image,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -20,8 +19,6 @@ const BG = '#F4F6FA';
 const TEXT = '#111827';
 const MUTED = '#667085';
 const BORDER = '#E4E8F0';
-
-const logoImg = require('../../assets/images/banner/logo-new.png');
 
 export default function TermsScreen() {
   const { t } = useTranslation();
@@ -65,13 +62,17 @@ export default function TermsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            activeOpacity={0.8}
+            onPress={() => router.back()}
+          >
             <Ionicons name="chevron-back" size={16} color="#fff" />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
 
           <View style={styles.heroCard}>
-            <View>
+            <View style={styles.heroContent}>
               <Text style={styles.heroSmall}>THORESEN POLICY</Text>
               <Text style={styles.heroTitle}>{t('terms')}</Text>
               <Text style={styles.heroSub}>
@@ -80,7 +81,7 @@ export default function TermsScreen() {
             </View>
 
             <View style={styles.heroIcon}>
-              <Ionicons name="document-text" size={30} color="#fff" />
+              <Ionicons name="document-text" size={28} color="#fff" />
             </View>
           </View>
 
@@ -89,10 +90,8 @@ export default function TermsScreen() {
               <View style={styles.numBadge}>
                 <Text style={styles.numText}>01</Text>
               </View>
-
               <Text style={styles.heading}>{t('termsHeading1')}</Text>
             </View>
-
             <Text style={styles.paragraph}>{t('termsParagraph1')}</Text>
           </View>
 
@@ -101,23 +100,24 @@ export default function TermsScreen() {
               <View style={styles.numBadge}>
                 <Text style={styles.numText}>02</Text>
               </View>
-
               <Text style={styles.heading}>{t('termsHeading2')}</Text>
             </View>
-
             <Text style={styles.paragraph}>{t('termsParagraph2')}</Text>
           </View>
 
-          <TouchableOpacity style={styles.acceptBtn}>
+          <TouchableOpacity
+            style={styles.acceptBtn}
+            activeOpacity={0.85}
+            onPress={() => router.back()}
+          >
             <Ionicons name="checkmark-circle" size={20} color="#fff" />
             <Text style={styles.acceptText}>{t('accept')}</Text>
           </TouchableOpacity>
-          
         </ScrollView>
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>© 2026 {t('footer')}</Text>
         </View>
-
 
         <Modal
           visible={menuVisible}
@@ -135,14 +135,14 @@ export default function TermsScreen() {
             <View style={styles.menuBox}>
               <Text style={styles.menuTitle}>{t('menu')}</Text>
 
-              {menuList.map(item => (
+              {menuList.map((item) => (
                 <TouchableOpacity
                   key={item.route}
                   style={styles.menuItem}
                   onPress={() => handleMenuPress(item.route)}
                 >
                   <Text style={styles.menuItemText}>{item.label}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#64748B" />
+                  <Ionicons name="chevron-forward" size={18} color="#64748B" />
                 </TouchableOpacity>
               ))}
             </View>
@@ -156,223 +156,175 @@ export default function TermsScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: BG,
+    backgroundColor: '#fff',
   },
-
   container: {
     flex: 1,
     backgroundColor: BG,
   },
-
-  header: {
-    height: 78,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-  },
-
-  logo: {
-    width: 170,
-    height: 52,
-  },
-
-  menuBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: PRIMARY,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
   scroll: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   scrollContent: {
-    paddingBottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
   },
   backBtn: {
-    marginTop: 12,
-    width: 78,
-    height: 34,
-    borderRadius: 18,
+    width: 76,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: PRIMARY,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 12,
   },
-
   backText: {
     color: '#fff',
-    fontSize: 11,
-    fontWeight: '900',
-    marginLeft: 2,
+    fontSize: 12,
+    fontWeight: '800',
+    marginLeft: 3,
   },
-
   heroCard: {
-    marginTop: 14,
     backgroundColor: PRIMARY,
-    borderRadius: 22,
+    borderRadius: 20,
     padding: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 14,
   },
-
+  heroContent: {
+    flex: 1,
+    paddingRight: 10,
+  },
   heroSmall: {
     color: '#BFD0FF',
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
   },
-
   heroTitle: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '900',
     marginTop: 4,
   },
-
   heroSub: {
     color: '#E8EDFF',
     fontSize: 12,
     lineHeight: 18,
     marginTop: 6,
-    maxWidth: 245,
   },
-
   heroIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: RED,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 12,
   },
-
   card: {
-    marginTop: 14,
     backgroundColor: '#fff',
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
     borderColor: BORDER,
+    marginBottom: 12,
   },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-
   numBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
+    width: 34,
+    height: 34,
+    borderRadius: 12,
     backgroundColor: '#EFF4FF',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
-
   numText: {
     color: PRIMARY,
     fontSize: 12,
     fontWeight: '900',
   },
-
   heading: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
     color: TEXT,
-    lineHeight: 22,
+    lineHeight: 20,
   },
-
   paragraph: {
     fontSize: 13,
     color: MUTED,
-    lineHeight: 21,
+    lineHeight: 20,
   },
-
   acceptBtn: {
     height: 48,
     borderRadius: 16,
     backgroundColor: RED,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
-    marginBottom: 8,
+    marginTop: 6,
     flexDirection: 'row',
-    gap: 7,
+    gap: 8,
   },
-
   acceptText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '900',
   },
-
   footer: {
-  height: 44,
-  backgroundColor: PRIMARY,
-  justifyContent: 'center',
-  alignItems: 'center',
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
+    height: 40,
+    backgroundColor: PRIMARY,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
-
   footerText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '700',
-  
   },
-
   menuOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
-
   menuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
-
   menuBox: {
     position: 'absolute',
     top: 92,
     right: 16,
-    width: 280,
+    width: 260,
     backgroundColor: '#fff',
     borderRadius: 18,
     paddingVertical: 10,
     elevation: 10,
   },
-
   menuTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '900',
     color: PRIMARY,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
+    paddingHorizontal: 18,
+    paddingBottom: 8,
   },
-
   menuItem: {
     paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
     borderBottomColor: '#EEF0F5',
   },
-
   menuItemText: {
     fontSize: 14,
     fontWeight: '700',
