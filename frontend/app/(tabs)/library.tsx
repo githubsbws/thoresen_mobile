@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
   Modal,
   ScrollView,
@@ -23,6 +24,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import AppHeader from '../../src/components/AppHeader';
+import { API_BASE_URL } from '../../src/services/api';
 
 const PRIMARY = '#001B74';
 const RED = '#E30613';
@@ -32,20 +34,61 @@ const MUTED = '#6B7280';
 const BORDER = '#E5E7EB';
 const TOP_INSET = initialWindowMetrics?.insets.top ?? 44;
 
+
+// ==================
+// TYPE DEFINITIONS
+// ==================
 type DocumentItem = {
   id: string;
   title: string;
   category: string;
-  image: string;
-  file: number;
+  // DB จริง (tbl_library_file) ไม่มีคอลัมน์รูปปก/thumbnail ให้
+  // จึงต้อง optional และมี fallback icon ตอนแสดงผล (ดู renderMediaThumb ด้านล่าง)
+  image?: string;
+  // สำหรับกรณีที่ใช้ไฟล์ PDF จาก local asset (require) หรือจาก URL
+  file?: number;
+  // สำหรับกรณีที่ใช้ไฟล์ PDF จาก URL (เช่น API หรือ Cloud Storage)
+  fileUrl?: string;
 };
 
 type VideoItem = {
   id: string;
   title: string;
-  image: string;
-  source: number;
+  // DB จริงไม่มี thumbnail ให้เช่นกัน ดู renderMediaThumb ด้านล่าง
+  image?: string;
+  // สำหรับกรณีที่ใช้วิดีโอจาก local asset (require) หรือจาก URL
+  source?: any;
+  // สำหรับกรณีที่ใช้วิดีโอจาก URL (เช่น API หรือ Cloud Storage)
+  videoUrl?: string;
 };
+
+// ==========================================
+// GALLERY TYPE DEFINITION
+// ==========================================
+// โครงสร้างข้อมูลโฟลเดอร์ Gallery สำหรับเก็บข้อมูลโฟลเดอร์ และเตรียมอาร์เรย์ URL รูปภาพรองรับ API จากระบบ Admin ในอนาคต
+type GalleryFolderItem = {
+  id?: string;
+  title: string;
+  // date คือ ISO string ของ galleryFolder.createdAt ที่ backend ดึงมาจาก DB จริง
+  // (ดู library.service.ts -> folder.createdAt.toISOString())
+  // ฝั่งนี้มีหน้าที่ format ให้อ่านง่ายผ่าน formatGalleryDate() ด้านล่าง
+  date: string;
+  images?: string[]; // อาร์เรย์เก็บ URL รูปภาพภายในโฟลเดอร์
+};
+
+// แปลง ISO date string ที่ได้จาก backend (galleryFolder.createdAt) ให้เป็นรูปแบบวันที่มาตรฐานสากล
+// ใช้ ISO 8601 (YYYY-MM-DD) เช่น "2026-01-22T00:00:00.000Z" -> "2026-01-22"
+// ไม่ใช้ toLocaleDateString('th-TH') เพราะ locale นี้จะแปลงปีเป็น พ.ศ. ให้อัตโนมัติ
+// (เช่น 2026 กลายเป็น 2569) ซึ่งไม่ตรงกับค่าที่เก็บใน DB และไม่ใช่มาตรฐานสากล
+// ถ้า parse ไม่ได้ (เช่น mock data เก่า หรือ backend ส่งค่าผิดรูปแบบ) จะคืนค่าดิบกลับไปแทน กันหน้าจอพัง
+function formatGalleryDate(dateString: string): string {
+  const parsed = new Date(dateString);
+  if (isNaN(parsed.getTime())) return dateString;
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 const tabs = [
   { key: 'documents', label: 'Documents', icon: 'document-text-outline' },
@@ -53,36 +96,44 @@ const tabs = [
   { key: 'gallery', label: 'Gallery', icon: 'images-outline' },
 ] as const;
 
-const categories = ['All', 'IT-Onboard', 'Safety', 'Training'];
+// หมายเหตุ: เดิมมี hardcode รายชื่อหมวดหมู่ไว้ตรงนี้ (['All', 'IT-Onboard', 'Safety', 'Training'])
+// แต่หมวดจริงจาก DB (tbl_library_type.library_type_name) มีหลายสิบชื่อและไม่ตรงกับที่ hardcode ไว้เลย
+// (เช่น "Technical", "Loss Prevention", "Draft Survey" ฯลฯ) จึงเปลี่ยนไปคำนวณจากข้อมูลจริงแทน
+// ดู categories useMemo ภายใน component ด้านล่าง
 
-const documents: DocumentItem[] = [
+// =====================================
+// MOCK DATA SECTION - สำหรับกรณีไม่มี API
+// =====================================
+const MOCK_DOCUMENTS: DocumentItem[] = [
   {
     id: 'it-onboard-2020',
     title: 'IT-Onboard Training 2020',
     category: 'IT-Onboard',
     image:
       'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=600',
-    // สร้างโฟลเดอร์ assets/documents แล้วใส่ไฟล์ PDF ไว้ตามชื่อนี้
     file: require('../../assets/documents/IT-Onboard_2020.pdf'),
   },
 ];
 
-const videos: VideoItem[] = [
+const MOCK_VIDEOS: VideoItem[] = [
   {
     id: 'training-01',
     title: 'Training Video',
     image:
       'https://images.unsplash.com/photo-1552664730-d307ca884978?w=600',
-    // เปลี่ยนเป็น URL ไฟล์ .mp4 จริงของบริษัทได้
-    source: require('../../assets/videos/training-video.mp4'),
+    source: null,
   },
 ];
 
-const folders = [
-  { title: 'Team Building', date: '22.01.2026' },
-  { title: 'Training Course', date: '22.01.2026' },
-  { title: 'Event Gallery', date: '22.01.2026' },
-  { title: 'Safety Campaign', date: '22.01.2026' },
+// ==========================================
+// GALLERY MOCK DATA
+// ==========================================
+// รายการโฟลเดอร์เริ่มต้น (UI รูปแบบเดิม) ถ้าหากฝั่ง Admin มีการเพิ่มโฟลเดอร์ใหม่ สามารถส่งข้อมูลเพิ่มเข้ามาในอาร์เรย์นี้ได้
+const MOCK_FOLDERS: GalleryFolderItem[] = [
+  { id: '1', title: 'Team Building', date: '2026-01-22T00:00:00.000Z', images: [] },
+  { id: '2', title: 'Training Course', date: '2026-01-22T00:00:00.000Z', images: [] },
+  { id: '3', title: 'Event Gallery', date: '2026-01-22T00:00:00.000Z', images: [] },
+  { id: '4', title: 'Safety Campaign', date: '2026-01-22T00:00:00.000Z', images: [] },
 ];
 
 function VideoPlayerModal({
@@ -94,10 +145,11 @@ function VideoPlayerModal({
   item: VideoItem | null;
   onClose: () => void;
 }) {
-  const player = useVideoPlayer(item?.source ?? null, playerInstance => {
-    playerInstance.loop = false;
+  const videoSource = item?.videoUrl ?? item?.source ?? null;
 
-    if (item) {
+  const player = useVideoPlayer(videoSource, playerInstance => {
+    playerInstance.loop = false;
+    if (item && videoSource) {
       playerInstance.play();
     }
   });
@@ -140,10 +192,7 @@ function VideoPlayerModal({
           </TouchableOpacity>
 
           <View style={styles.videoHeaderText}>
-            <Text style={styles.viewerEyebrow}>
-              TRAINING VIDEO
-            </Text>
-
+            <Text style={styles.viewerEyebrow}>TRAINING VIDEO</Text>
             <Text style={styles.viewerTitle} numberOfLines={1}>
               {item?.title}
             </Text>
@@ -165,7 +214,7 @@ function VideoPlayerModal({
           bounces={false}
         >
           <View style={styles.videoPlayerCard}>
-            {item && (
+            {item && videoSource ? (
               <VideoView
                 player={player}
                 style={styles.videoPlayer}
@@ -174,6 +223,18 @@ function VideoPlayerModal({
                 allowsFullscreen
                 allowsPictureInPicture
               />
+            ) : (
+              <View
+                style={[
+                  styles.videoPlayer,
+                  { justifyContent: 'center', alignItems: 'center' },
+                ]}
+              >
+                <Ionicons name="alert-circle-outline" size={40} color="#fff" />
+                <Text style={{ color: '#fff', marginTop: 8, fontSize: 12 }}>
+                  ยังไม่มีไฟล์วิดีโอในระบบ
+                </Text>
+              </View>
             )}
           </View>
 
@@ -183,10 +244,7 @@ function VideoPlayerModal({
             </View>
 
             <View style={styles.videoDetailText}>
-              <Text style={styles.videoDetailTitle}>
-                {item?.title}
-              </Text>
-
+              <Text style={styles.videoDetailTitle}>{item?.title}</Text>
               <Text style={styles.videoDetailSubtitle}>
                 วิดีโอฝึกอบรมสำหรับพนักงานและลูกเรือ
               </Text>
@@ -199,7 +257,6 @@ function VideoPlayerModal({
               size={19}
               color={PRIMARY}
             />
-
             <Text style={styles.videoTipText}>
               แตะปุ่มขยายเพื่อรับชมวิดีโอแบบเต็มหน้าจอ
             </Text>
@@ -220,6 +277,80 @@ export default function LibraryScreen() {
   const [pdfTitle, setPdfTitle] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
 
+  // ==========================================
+  // STATE & FETCH DATA FROM API SECTION
+  // ==========================================
+  const [documents, setDocuments] = useState<DocumentItem[]>(MOCK_DOCUMENTS);
+  const [videos, setVideos] = useState<VideoItem[]>(MOCK_VIDEOS);
+  const [gallery, setGallery] = useState<GalleryFolderItem[]>(MOCK_FOLDERS);
+  const [isFetching, setIsFetching] = useState(false);
+
+  // ==========================================
+  // GALLERY STATES
+  // ==========================================
+  // จัดการสถานะการเปิดโฟลเดอร์ และรูปภาพขนาดใหญ่ภายใน Gallery
+  const [selectedFolder, setSelectedFolder] = useState<GalleryFolderItem | null>(null);
+  const [isGalleryModalVisible, setIsGalleryModalVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  
+  // --------------------------------------------------------------------
+  // อ่าน URL จาก .env (frontend project) ตัวแปรชื่อ EXPO_PUBLIC_API_URL
+  // ต้องขึ้นต้นด้วย EXPO_PUBLIC_ เท่านั้น Expo ถึงจะ inject ให้ใช้ได้
+  // และต้อง restart `expo start` ทุกครั้งที่แก้ไฟล์ .env
+  //
+  // หมายเหตุ: controller ฝั่ง backend ใช้ @Controller('library') รวมกับ
+  // global prefix 'v1' (ตั้งไว้ใน main.ts) จึงได้ path จริงคือ /v1/library
+  //
+  // ถ้า fetch ล้มเหลว (เช่น ยังไม่ได้ต่อ VPN, backend ยังไม่พร้อม)
+  // จะแค่ log error ไว้ แล้วปล่อยให้ documents/videos/gallery ยังเป็น
+  // Mock Data ที่ตั้งต้นไว้ตอน useState (ไม่ set ค่าอะไรทับ)
+  // --------------------------------------------------------------------
+  useEffect(() => {
+    const fetchLibraryData = async () => {
+      try {
+        setIsFetching(true);
+
+        const API_URL = API_BASE_URL;
+
+        const response = await fetch(`${API_URL}/library`);
+
+        if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          setDocuments(result.data.documents || []);
+          setVideos(result.data.videos || []);
+          setGallery(result.data.gallery || []);
+        }
+      } catch (error) {
+        console.error('Fetch Library Error:', error);
+        // ไม่ set ค่าอะไรทับ ยังเป็น Mock Data เดิม
+      } finally {
+        setIsFetching(false);
+      }
+    };
+
+    fetchLibraryData();
+  }, []);
+  
+
+  // คำนวณรายชื่อหมวดหมู่จากข้อมูลจริงที่ backend ส่งมา (unique category ของ documents)
+  // แทนการ hardcode ไว้ตายตัว เพราะหมวดจริงจาก tbl_library_type มีหลายสิบชื่อและเปลี่ยนได้เรื่อย ๆ
+  const categories = useMemo(() => {
+    const uniqueCategories = Array.from(
+      new Set(
+        documents
+          .map(item => item.category)
+          .filter((c): c is string => !!c && c.trim().length > 0),
+      ),
+    );
+    return ['All', ...uniqueCategories];
+  }, [documents]);
+
   const filteredDocuments = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return documents.filter(item => {
@@ -229,14 +360,25 @@ export default function LibraryScreen() {
         !keyword || item.title.toLowerCase().includes(keyword);
       return categoryMatched && searchMatched;
     });
-  }, [activeCategory, search]);
+  }, [documents, activeCategory, search]);
 
   const filteredVideos = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return videos.filter(
       item => !keyword || item.title.toLowerCase().includes(keyword),
     );
-  }, [search]);
+  }, [videos, search]);
+
+  // ==========================================
+  // GALLERY FILTER
+  // ==========================================
+  // กรองข้อมูลโฟลเดอร์ Gallery ตามคำค้นหา (Search)
+  const filteredGallery = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return gallery.filter(
+      item => !keyword || item.title.toLowerCase().includes(keyword),
+    );
+  }, [gallery, search]);
 
   const currentTitle = useMemo(() => {
     if (activeTab === 'documents') return 'Document Library';
@@ -244,12 +386,32 @@ export default function LibraryScreen() {
     return 'Hall of Fame';
   }, [activeTab]);
 
+  // ============================
+  // DOCUMENT HANDLER FUNCTIONS
+  // ============================
   const prepareDocument = async (item: DocumentItem) => {
-    const asset = Asset.fromModule(item.file);
-    if (!asset.localUri) await asset.downloadAsync();
-    const uri = asset.localUri ?? asset.uri;
-    if (!uri) throw new Error('ไม่พบไฟล์ PDF');
-    return uri;
+    //รับ url จาก backend/storage และตรวจสอบว่ามีไฟล์ PDF อยู่หรือไม่ หากมีให้ดาวน์โหลดและเก็บไว้ใน cache directory ของอุปกรณ์
+    if (item.fileUrl) {
+      const localUri = `${FileSystem.cacheDirectory}${item.id}.pdf`;
+      const fileInfo = await FileSystem.getInfoAsync(localUri);
+      if (!fileInfo.exists) {
+        const downloadResult = await FileSystem.downloadAsync(
+          item.fileUrl,
+          localUri,
+        );
+        return downloadResult.uri;
+      }
+      return localUri;
+    }
+    // สำหรับกรณีที่ใช้ไฟล์ PDF จาก local asset (require) หรือจาก URL
+    if (item.file) {
+      const asset = Asset.fromModule(item.file);
+      if (!asset.localUri) await asset.downloadAsync();
+      const uri = asset.localUri ?? asset.uri;
+      if (uri) return uri;
+    }
+
+    throw new Error('ไม่พบไฟล์ PDF');
   };
 
   const openDocument = async (item: DocumentItem) => {
@@ -259,7 +421,10 @@ export default function LibraryScreen() {
       setPdfTitle(item.title);
       setPdfUri(uri);
     } catch {
-      Alert.alert('เปิดไฟล์ไม่สำเร็จ', 'กรุณาตรวจสอบว่าใส่ไฟล์ PDF ถูกตำแหน่งแล้ว');
+      Alert.alert(
+        'เปิดไฟล์ไม่สำเร็จ',
+        'กรุณาตรวจสอบว่าไฟล์ PDF ถูกต้องหรือ URL ถูกตำแหน่งแล้ว',
+      );
     } finally {
       setLoadingDocument(false);
     }
@@ -289,10 +454,21 @@ export default function LibraryScreen() {
     }
   };
 
+  // ==========================================
+  // GALLERY HANDLER FUNCTIONS
+  // ==========================================
+  // ฟังก์ชันสำหรับเปิดดูรายละเอียดอัลบั้มรูปภาพเมื่อผู้ใช้คลิกเลือกโฟลเดอร์
+  const handleOpenFolder = (folder: GalleryFolderItem) => {
+    setSelectedFolder(folder);
+    setIsGalleryModalVisible(true);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.mainScrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.mainScrollContent}
+      >
         <AppHeader />
 
         <View style={styles.content}>
@@ -323,20 +499,19 @@ export default function LibraryScreen() {
           <View style={styles.tabRow}>
             {tabs.map(tab => (
               <TouchableOpacity
-                    key={tab.key}
-                    onPress={() => {
-                      setActiveTab(tab.key);
-                      setSearch('');
-
-                      if (tab.key === 'documents') {
-                        setActiveCategory('All');
-                      }
-                    }}
-                    style={[
-                      styles.tabItem,
-                      activeTab === tab.key && styles.tabItemActive,
-                    ]}
-                  >
+                key={tab.key}
+                onPress={() => {
+                  setActiveTab(tab.key);
+                  setSearch('');
+                  if (tab.key === 'documents') {
+                    setActiveCategory('All');
+                  }
+                }}
+                style={[
+                  styles.tabItem,
+                  activeTab === tab.key && styles.tabItemActive,
+                ]}
+              >
                 <Ionicons
                   name={tab.icon}
                   size={19}
@@ -356,7 +531,11 @@ export default function LibraryScreen() {
 
           <Text style={styles.sectionTitle}>{currentTitle}</Text>
 
-          {activeTab === 'documents' && (
+          {isFetching ? (
+            <ActivityIndicator size="large" color={PRIMARY} style={{ marginTop: 20 }} />
+          ) : (
+            <>
+              {activeTab === 'documents' && (
                 <>
                   <ScrollView
                     horizontal
@@ -394,32 +573,36 @@ export default function LibraryScreen() {
                             activeOpacity={0.85}
                           >
                             <View style={styles.mediaWrap}>
-                              <Image
-                                source={{ uri: item.image }}
-                                style={styles.image}
-                              />
-
+                              {item.image ? (
+                                <Image
+                                  source={{ uri: item.image }}
+                                  style={styles.image}
+                                />
+                              ) : (
+                                <View
+                                  style={[styles.image, styles.imagePlaceholder]}
+                                >
+                                  <Ionicons
+                                    name="document-text-outline"
+                                    size={36}
+                                    color={MUTED}
+                                  />
+                                </View>
+                              )}
                               <View style={styles.overlay} />
-
                               <View style={styles.badge}>
                                 <Ionicons
                                   name="document-text"
                                   size={13}
                                   color="#fff"
                                 />
-
-                                <Text style={styles.badgeText}>
-                                  PDF
-                                </Text>
+                                <Text style={styles.badgeText}>PDF</Text>
                               </View>
                             </View>
                           </TouchableOpacity>
 
                           <View style={styles.cardBody}>
-                            <Text
-                              style={styles.cardTitle}
-                              numberOfLines={2}
-                            >
+                            <Text style={styles.cardTitle} numberOfLines={2}>
                               {item.title}
                             </Text>
 
@@ -433,10 +616,7 @@ export default function LibraryScreen() {
                                   size={15}
                                   color="#fff"
                                 />
-
-                                <Text style={styles.actionText}>
-                                  เปิดดู
-                                </Text>
+                                <Text style={styles.actionText}>เปิดดู</Text>
                               </TouchableOpacity>
 
                               <TouchableOpacity
@@ -463,15 +643,10 @@ export default function LibraryScreen() {
                           color={PRIMARY}
                         />
                       </View>
-
-                      <Text style={styles.emptyTitle}>
-                        ไม่พบเอกสาร
-                      </Text>
-
+                      <Text style={styles.emptyTitle}>ไม่พบเอกสาร</Text>
                       <Text style={styles.emptyDescription}>
                         ยังไม่มีเอกสารในหมวดนี้
                       </Text>
-
                       <TouchableOpacity
                         style={styles.showAllButton}
                         onPress={() => {
@@ -488,47 +663,71 @@ export default function LibraryScreen() {
                 </>
               )}
 
-          {activeTab === 'videos' && (
-            <View style={styles.grid}>
-              {filteredVideos.map(item => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.card}
-                  onPress={() => setSelectedVideo(item)}
-                >
-                  <View style={styles.mediaWrap}>
-                    <Image source={{ uri: item.image }} style={styles.image} />
-                    <View style={styles.overlay} />
-                    <View style={styles.playButton}>
-                      <Ionicons name="play" size={22} color={PRIMARY} />
-                    </View>
-                  </View>
-                  <View style={styles.cardBody}>
-                    <Text style={styles.cardTitle}>{item.title}</Text>
-                    <Text style={styles.videoHint}>แตะเพื่อเล่นวิดีโอ</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {activeTab === 'gallery' && (
-            <View style={styles.grid}>
-              {folders.map(item => (
-                <View key={item.title} style={styles.folderCard}>
-                  <Ionicons name="folder" size={54} color="#F6B23C" />
-                  <Text style={styles.folderTitle}>{item.title}</Text>
-                  <Text style={styles.folderDate}>{item.date}</Text>
+              {activeTab === 'videos' && (
+                <View style={styles.grid}>
+                  {filteredVideos.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.card}
+                      onPress={() => setSelectedVideo(item)}
+                    >
+                      <View style={styles.mediaWrap}>
+                        {item.image ? (
+                          <Image source={{ uri: item.image }} style={styles.image} />
+                        ) : (
+                          <View style={[styles.image, styles.imagePlaceholder]}>
+                            <Ionicons
+                              name="play-circle-outline"
+                              size={36}
+                              color={MUTED}
+                            />
+                          </View>
+                        )}
+                        <View style={styles.overlay} />
+                        <View style={styles.playButton}>
+                          <Ionicons name="play" size={22} color={PRIMARY} />
+                        </View>
+                      </View>
+                      <View style={styles.cardBody}>
+                        <Text style={styles.cardTitle}>{item.title}</Text>
+                        <Text style={styles.videoHint}>แตะเพื่อเล่นวิดีโอ</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              ))}
-            </View>
+              )}
+
+               {/* ========================================== 
+               TAB GALLERY (แสดงโฟลเดอร์ในแท็บ Hall of Fame) 
+               ==========================================  */}
+              {/* แสดงรายการโฟลเดอร์การ์ดสีขาว + ไอคอนโฟลเดอร์สีเหลือง และรับข้อมูลจาก API ที่ Admin เพิ่มเข้ามาใหม่ได้อัตโนมัติ */}
+              {activeTab === 'gallery' && (
+                <View style={styles.grid}>
+                  {filteredGallery.map(item => (
+                    <TouchableOpacity
+                      key={item.id ?? item.title}
+                      style={styles.folderCard}
+                      onPress={() => handleOpenFolder(item)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="folder" size={54} color="#F6B23C" />
+                      <Text style={styles.folderTitle}>{item.title}</Text>
+                      <Text style={styles.folderDate}>
+                        {formatGalleryDate(item.date)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
           )}
         </View>
-              <View style={styles.footer}>
-                  <Text style={styles.footerText}>© 2026 Thoresen e-Learning</Text>
-                </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>© 2026 Thoresen e-Learning</Text>
+        </View>
       </ScrollView>
-               
+
       {loadingDocument && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#fff" />
@@ -536,6 +735,7 @@ export default function LibraryScreen() {
         </View>
       )}
 
+      {/* PDF Modal */}
       <Modal
         visible={Boolean(pdfUri)}
         animationType="slide"
@@ -571,30 +771,108 @@ export default function LibraryScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* Video Modal */}
       <VideoPlayerModal
         key={selectedVideo?.id ?? 'no-video'}
         visible={Boolean(selectedVideo)}
         item={selectedVideo}
         onClose={() => setSelectedVideo(null)}
       />
+
+      {/* ========================================== */}
+      {/* GALLERY ALBUM MODAL & LIGHTBOX */}
+      {/* ========================================== */}
+      {/* หน้าต่างแสดงรูปภาพทั้งหมดในโฟลเดอร์นั้นๆ ถ้าโฟลเดอร์นั้นมีรูปจะแสดงในแบบ Grid 2 คอลัมน์ แต่ถ้าไม่มีจะแสดง Empty State */}
+      <Modal
+        visible={isGalleryModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsGalleryModalVisible(false)}
+      >
+        <SafeAreaView style={styles.viewerSafe} edges={['top', 'bottom']}>
+          <StatusBar style="light" backgroundColor={PRIMARY} />
+          <View style={styles.viewerHeader}>
+            <TouchableOpacity
+              style={styles.headerBackButton}
+              onPress={() => setIsGalleryModalVisible(false)}
+            >
+              <Ionicons name="chevron-back" size={25} color="#fff" />
+            </TouchableOpacity>
+
+            <View style={styles.videoHeaderText}>
+              <Text style={styles.viewerEyebrow}>GALLERY ALBUM</Text>
+              <Text style={styles.viewerTitle} numberOfLines={1}>
+                {selectedFolder?.title}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setIsGalleryModalVisible(false)}
+            >
+              <Ionicons name="close" size={25} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* ตรวจสอบว่ามีข้อมูลรูปภาพในโฟลเดอร์หรือไม่ */}
+          {selectedFolder?.images && selectedFolder.images.length > 0 ? (
+            <FlatList
+              data={selectedFolder.images}
+              numColumns={2}
+              keyExtractor={(item, index) => index.toString()}
+              contentContainerStyle={styles.galleryGridContainer}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.gridImageWrapper}
+                  onPress={() => setSelectedImage(item)}
+                  activeOpacity={0.8}
+                >
+                  <Image source={{ uri: item }} style={styles.gridImage} />
+                </TouchableOpacity>
+              )}
+            />
+          ) : (
+            <View style={[styles.emptyState, { margin: 20 }]}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="images-outline" size={32} color={PRIMARY} />
+              </View>
+              <Text style={styles.emptyTitle}>ยังไม่มีรูปภาพ</Text>
+              <Text style={styles.emptyDescription}>
+                ขณะนี้ยังไม่มีข้อมูลรูปภาพในโฟลเดอร์นี้
+              </Text>
+            </View>
+          )}
+
+          {/* Lightbox สำหรับแสดงรูปภาพขนาดเต็มเมื่อผู้ใช้แตะที่รูปใดรูปหนึ่ง */}
+          {selectedImage && (
+            <Modal
+              transparent
+              visible={Boolean(selectedImage)}
+              onRequestClose={() => setSelectedImage(null)}
+            >
+              <TouchableOpacity
+                style={styles.lightboxBg}
+                activeOpacity={1}
+                onPress={() => setSelectedImage(null)}
+              >
+                <Image
+                  source={{ uri: selectedImage }}
+                  style={styles.fullImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+            </Modal>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { 
-    flex: 1, 
-    backgroundColor: BG 
-  },
-
-  mainScrollContent:{
-    flexGrow: 1,
-  },
-  content: { 
-    flex:1,
-    paddingHorizontal: 16, 
-    paddingBottom: 30 
-  },
+  safe: { flex: 1, backgroundColor: BG },
+  mainScrollContent: { flexGrow: 1 },
+  content: { flex: 1, paddingHorizontal: 16, paddingBottom: 30 },
   heroCard: {
     marginTop: 18,
     backgroundColor: PRIMARY,
@@ -612,12 +890,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 7,
   },
-  heroTitle: {
-    color: '#fff',
-    fontSize: 30,
-    fontWeight: '900',
-    marginBottom: 7,
-  },
+  heroTitle: { color: '#fff', fontSize: 30, fontWeight: '900', marginBottom: 7 },
   heroDesc: { color: '#E7EEFF', fontSize: 13, fontWeight: '600', lineHeight: 20 },
   heroIcon: {
     width: 74,
@@ -692,6 +965,11 @@ const styles = StyleSheet.create({
   },
   mediaWrap: { height: 112, position: 'relative' },
   image: { width: '100%', height: '100%' },
+  imagePlaceholder: {
+    backgroundColor: '#EEF2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.22)',
@@ -756,6 +1034,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   videoHint: { color: MUTED, fontSize: 10, fontWeight: '600' },
+  
+  // ==========================================
+  // GALLERY STYLES
+  // ==========================================
+  // สไตล์สำหรับโฟลเดอร์, ตาราง Grid รูปภาพ และ Lightbox
   folderCard: {
     width: '48%',
     minHeight: 145,
@@ -777,6 +1060,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   folderDate: { fontSize: 10, color: MUTED, marginTop: 4, fontWeight: '600' },
+  
+  galleryGridContainer: {
+    padding: 12,
+  },
+  gridImageWrapper: {
+    flex: 1,
+    margin: 6,
+    height: 140,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  gridImage: {
+    width: '100%',
+    height: '100%',
+  },
+  lightboxBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullImage: {
+    width: '100%',
+    height: '85%',
+  },
+
   footer: {
     height: 38,
     backgroundColor: PRIMARY,
@@ -811,10 +1121,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  videoHeaderText: {
-    flex: 1,
-    paddingHorizontal: 12,
-  },
+  videoHeaderText: { flex: 1, paddingHorizontal: 12 },
   viewerEyebrow: {
     color: '#AFC6FF',
     fontSize: 9,
@@ -822,11 +1129,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginBottom: 2,
   },
-  viewerTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '900',
-  },
+  viewerTitle: { color: '#fff', fontSize: 16, fontWeight: '900' },
   closeButton: {
     width: 42,
     height: 42,
@@ -837,14 +1140,8 @@ const styles = StyleSheet.create({
   },
   pdfViewer: { flex: 1, backgroundColor: '#fff' },
   webLoading: { position: 'absolute', alignSelf: 'center', top: '45%' },
-  videoPage: {
-    flex: 1,
-    backgroundColor: BG,
-  },
-  videoPageContent: {
-    padding: 16,
-    paddingBottom: 34,
-  },
+  videoPage: { flex: 1, backgroundColor: BG },
+  videoPageContent: { padding: 16, paddingBottom: 34 },
   videoPlayerCard: {
     width: '100%',
     aspectRatio: 16 / 9,
@@ -853,11 +1150,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     elevation: 5,
   },
-  videoPlayer: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000',
-  },
+  videoPlayer: { width: '100%', height: '100%', backgroundColor: '#000' },
   videoDetailCard: {
     marginTop: 16,
     padding: 16,
@@ -876,15 +1169,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  videoDetailText: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  videoDetailTitle: {
-    color: TEXT,
-    fontSize: 16,
-    fontWeight: '900',
-  },
+  videoDetailText: { flex: 1, marginLeft: 12 },
+  videoDetailTitle: { color: TEXT, fontSize: 16, fontWeight: '900' },
   videoDetailSubtitle: {
     color: MUTED,
     fontSize: 11,
@@ -908,17 +1194,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   emptyState: {
-  minHeight: 210,
-  borderRadius: 20,
-  backgroundColor: '#fff',
-  borderWidth: 1,
-  borderColor: BORDER,
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 20,
-  marginBottom: 18,
+    minHeight: 210,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginBottom: 18,
   },
-
   emptyIcon: {
     width: 62,
     height: 62,
@@ -927,21 +1212,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  emptyTitle: {
-    marginTop: 12,
-    color: TEXT,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
+  emptyTitle: { marginTop: 12, color: TEXT, fontSize: 16, fontWeight: '900' },
   emptyDescription: {
     marginTop: 4,
     color: MUTED,
     fontSize: 11,
     fontWeight: '600',
   },
-
   showAllButton: {
     marginTop: 14,
     height: 38,
@@ -951,10 +1228,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  showAllButtonText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
+  showAllButtonText: { color: '#fff', fontSize: 11, fontWeight: '800' },
 });

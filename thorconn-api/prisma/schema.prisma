@@ -3072,35 +3072,39 @@ model tbl_formsurvey_typeans {
 }
 
 model tbl_gallery {
-  id               Int       @id @default(autoincrement())
-  group_gallery_id Int?
-  gallery_type_id  Int?
-  image            String?   @db.VarChar(255)
-  create_date      DateTime? @db.DateTime(0)
-  create_by        String?   @db.VarChar(255)
-  update_date      DateTime? @db.DateTime(0)
-  update_by        String?   @db.VarChar(255)
-  active           String?   @default("y") @db.VarChar(1)
+  id                Int                @id @default(autoincrement())
+  group_gallery_id  Int?
+  gallery_type_id   Int?
+  image             String?            @db.VarChar(255)
+  create_date       DateTime?          @db.DateTime(0)
+  create_by         String?            @db.VarChar(255)
+  update_date       DateTime?          @db.DateTime(0)
+  update_by         String?            @db.VarChar(255)
+  active            String?            @default("y") @db.VarChar(1)
+  tbl_gallery_group tbl_gallery_group? @relation(fields: [group_gallery_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
 }
 
 model tbl_gallery_group {
-  id              Int       @id @default(autoincrement())
-  gallery_type_id Int?
-  create_date     DateTime? @db.DateTime(0)
-  create_by       Int?
-  update_date     DateTime? @db.DateTime(0)
-  update_by       Int?
-  active          String?   @default("y") @db.Char(1)
+  id               Int               @id @default(autoincrement())
+  gallery_type_id  Int?
+  create_date      DateTime?         @db.DateTime(0)
+  create_by        Int?
+  update_date      DateTime?         @db.DateTime(0)
+  update_by        Int?
+  active           String?           @default("y") @db.Char(1)
+  tbl_gallery_type tbl_gallery_type? @relation(fields: [gallery_type_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  tbl_gallery      tbl_gallery[]
 }
 
 model tbl_gallery_type {
-  id                Int       @id @default(autoincrement())
-  name_gallery_type String    @db.VarChar(255)
-  create_date       DateTime? @db.DateTime(0)
-  create_by         String?   @db.VarChar(255)
-  update_date       DateTime? @db.DateTime(0)
-  update_by         String?   @db.VarChar(255)
-  active            String?   @default("y") @db.Char(1)
+  id                Int                 @id @default(autoincrement())
+  name_gallery_type String              @db.VarChar(255)
+  create_date       DateTime?           @db.DateTime(0)
+  create_by         String?            @db.VarChar(255)
+  update_date       DateTime?           @db.DateTime(0)
+  update_by         String?            @db.VarChar(255)
+  active            String?             @default("y") @db.Char(1)
+  tbl_gallery_group tbl_gallery_group[]
 }
 
 model tbl_generation {
@@ -3338,6 +3342,7 @@ model tbl_library_file {
   created_date     DateTime? @db.DateTime(0)
   updated_by       Int?
   updated_date     DateTime? @db.DateTime(0)
+  tbl_library_type tbl_library_type? @relation(fields: [library_type_id], references: [library_type_id])
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -3366,6 +3371,7 @@ model tbl_library_type {
   created_date         DateTime? @db.DateTime(0)
   updated_by           Int?
   updated_date         DateTime? @db.DateTime(0)
+  tbl_library_file     tbl_library_file[]
 }
 
 model tbl_log_approve {
@@ -5336,3 +5342,55 @@ enum tbl_profiles_address_parent {
   n
 }
 
+// ===========================
+//  [LIBRARY MODULE MODELS]
+// ===========================
+
+// model LibraryDocument {
+//   id        String   @id @default(uuid())
+//   title     String
+//   category  String
+//   image     String
+//   fileUrl   String
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+// }
+
+// model LibraryVideo {
+//   id        String   @id @default(uuid())
+//   title     String
+//   image     String
+//   videoUrl  String
+//   createdAt DateTime @default(now())
+// }
+
+// model GalleryFolder {
+//   id          String         @id @default(uuid())
+//   title       String
+//   coverImage  String
+//   createdAt   DateTime       @default(now())
+//   images      GalleryImage[]
+// }
+
+// model GalleryImage {
+//   id        String        @id @default(uuid())
+//   imageUrl  String
+//   folderId  String
+//   folder    GalleryFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+//   createdAt DateTime      @default(now())
+// }
+
+//model News {
+  //id        String   @id @default(uuid())
+  //title     String
+  //category  String
+  //date      String
+  //image     String   @db.Text
+  //detail    String   @db.Text
+  //content   String   @db.Text
+  //isHero    Boolean  @default(false) @map("is_hero")
+  //createdAt DateTime @default(now()) @map("created_at")
+  //updatedAt DateTime @updatedAt @map("updated_at")
+
+  //@@map("news")
+//}
