@@ -8,6 +8,8 @@ import { HomeModule } from './home/home.module';
 import { AboutModule } from './about/about.module';
 import { FaqModule } from './faq/faq.module';
 import { CourseModule } from './course/course.module';
+import { LibraryModule } from './library/library.module';
+import { NewsModule } from './news/news.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { CourseModule } from './course/course.module';
     AboutModule,
     FaqModule,
     CourseModule,
+    LibraryModule,
+    NewsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
