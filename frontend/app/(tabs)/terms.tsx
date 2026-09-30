@@ -1,58 +1,89 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  Image,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Modal,
+  ActivityIndicator,
+  Alert,
+  Linking,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import AppHeader from '../../src/components/AppHeader';
+import { getConditions, ConditionData } from '../../src/services/conditions';
 
 const PRIMARY = '#001B74';
 const RED = '#E30613';
 const BG = '#F4F6FA';
 const TEXT = '#111827';
-const MUTED = '#667085';
-const BORDER = '#E4E8F0';
-
-const logoImg = require('../../assets/images/banner/logo-new.png');
+const MUTED = '#4B5563';
+const BORDER = '#E5E7EB';
 
 export default function TermsScreen() {
-  const { t } = useTranslation();
-  const [menuVisible, setMenuVisible] = useState(false);
+  const { t, i18n } = useTranslation();
 
-  const menuList = [
-    { label: t('home'), route: 'Home' },
-    { label: t('about'), route: 'About Us' },
-    { label: t('course'), route: 'Course' },
-    { label: t('howto'), route: 'How to Use' },
-    { label: t('faq'), route: 'FAQ' },
-    { label: t('contact'), route: 'Contact Us' },
-    { label: t('messroom'), route: 'Mess-room' },
-    { label: t('library'), route: 'Library' },
-    { label: t('terms'), route: 'Terms & Conditions' },
-    { label: t('report'), route: 'Report' },
-  ];
+  const [condition, setCondition] = useState<ConditionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
-  const handleMenuPress = (route: string) => {
-    setMenuVisible(false);
+  const isThai = i18n.language?.startsWith('th');
 
-    if (route === 'Home') router.push('/(tabs)/Home' as any);
-    if (route === 'About Us') router.push('/(tabs)/about' as any);
-    if (route === 'Course') router.push('/(tabs)/courses' as any);
-    if (route === 'How to Use') router.push('/(tabs)/how-to-use' as any);
-    if (route === 'FAQ') router.push('/(tabs)/faq' as any);
-    if (route === 'Contact Us') router.push('/(tabs)/contact' as any);
-    if (route === 'Library') router.push('/(tabs)/library' as any);
-    if (route === 'Terms & Conditions') router.push('/(tabs)/terms' as any);
-    if (route === 'Report') router.push('/(tabs)/report' as any);
-    if (route === 'Mess-room') alert(t('developing'));
+  const fetchConditions = async (showLoading = true) => {
+    try {
+      if (showLoading) setLoading(true);
+
+      const langId = isThai ? 2 : 1;
+      const res = await getConditions(langId);
+      setCondition(res.condition);
+    } catch (error) {
+      console.error('Failed to load terms & conditions:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConditions();
+  }, [i18n.language]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchConditions(false);
+  };
+
+  const handleAccept = () => {
+    setAccepted(true);
+    Alert.alert(
+      isThai ? 'บันทึกการยอมรับแล้ว' : 'Terms Accepted',
+      isThai
+        ? 'คุณได้ยอมรับข้อกำหนดและเงื่อนไขการใช้งานเรียบร้อยแล้ว'
+        : 'You have agreed to the Terms & Conditions.',
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (router.canGoBack()) {
+              router.back();
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleOpenEmail = () => {
+    Linking.openURL('mailto:Shipping-IT@thoresen.com');
+  };
+
+  const handleOpenWeb = () => {
+    Linking.openURL('https://thorconn.com/dashboard/terms');
   };
 
   return (
@@ -64,18 +95,35 @@ export default function TermsScreen() {
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[PRIMARY]}
+            />
+          }
         >
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          {/* Back Button */}
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
             <Ionicons name="chevron-back" size={16} color="#fff" />
-            <Text style={styles.backText}>Back</Text>
+            <Text style={styles.backText}>{t('back', { defaultValue: 'Back' })}</Text>
           </TouchableOpacity>
 
+          {/* Hero Header Card */}
           <View style={styles.heroCard}>
-            <View>
+            <View style={styles.heroTextCol}>
               <Text style={styles.heroSmall}>THORESEN POLICY</Text>
-              <Text style={styles.heroTitle}>{t('terms')}</Text>
+              <Text style={styles.heroTitle}>
+                {condition?.title || (isThai ? 'ข้อกำหนด & เงื่อนไข' : 'Terms & Conditions')}
+              </Text>
               <Text style={styles.heroSub}>
-                Please read the terms and conditions carefully before using this system.
+                {isThai
+                  ? 'โปรดอ่านและทำความเข้าใจข้อกำหนดและเงื่อนไขก่อนเข้าใช้งานระบบ'
+                  : 'Please read the terms and conditions carefully before using this system.'}
               </Text>
             </View>
 
@@ -84,70 +132,133 @@ export default function TermsScreen() {
             </View>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.numBadge}>
-                <Text style={styles.numText}>01</Text>
-              </View>
-
-              <Text style={styles.heading}>{t('termsHeading1')}</Text>
+          {loading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={PRIMARY} />
+              <Text style={styles.loadingText}>
+                {isThai ? 'กำลังโหลดข้อกำหนดและเงื่อนไข...' : 'Loading terms & conditions...'}
+              </Text>
             </View>
+          ) : condition ? (
+            <>
+              {/* Introduction Box */}
+              {condition.intro ? (
+                <View style={styles.introCard}>
+                  <View style={styles.introIconWrap}>
+                    <Ionicons name="information-circle" size={22} color={PRIMARY} />
+                  </View>
+                  <Text style={styles.introText}>{condition.intro}</Text>
+                </View>
+              ) : null}
 
-            <Text style={styles.paragraph}>{t('termsParagraph1')}</Text>
-          </View>
+              {/* Numbered Clause Cards (01 - 06) */}
+              {condition.items && condition.items.length > 0 ? (
+                condition.items.map((item) => (
+                  <View key={item.number} style={styles.clauseCard}>
+                    <View style={styles.clauseHeader}>
+                      <View style={styles.numBadge}>
+                        <Text style={styles.numText}>{item.number}</Text>
+                      </View>
+                      <Text style={styles.clauseTitle}>
+                        {isThai ? `ข้อที่ ${parseInt(item.number, 10)}` : `Clause ${parseInt(item.number, 10)}`}
+                      </Text>
+                    </View>
+                    <Text style={styles.clauseParagraph}>{item.text}</Text>
+                  </View>
+                ))
+              ) : null}
 
-          <View style={styles.card}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.numBadge}>
-                <Text style={styles.numText}>02</Text>
-              </View>
+              {/* Contact & Policy Box */}
+              <View style={styles.contactCard}>
+                <View style={styles.contactHeader}>
+                  <Ionicons name="shield-checkmark" size={20} color={PRIMARY} />
+                  <Text style={styles.contactTitle}>
+                    {isThai ? 'ข้อมูลเพิ่มเติม & นโยบายความเป็นส่วนตัว' : 'Additional Info & Privacy Policy'}
+                  </Text>
+                </View>
 
-              <Text style={styles.heading}>{t('termsHeading2')}</Text>
-            </View>
+                <Text style={styles.contactDesc}>
+                  {isThai
+                    ? 'เอกสาร “นโยบายการคุ้มครองข้อมูลส่วนบุคคล” และข้อกำหนดเพิ่มเติม สามารถติดต่อสอบถามได้ที่:'
+                    : 'For Privacy Policy documents and further details, please contact:'}
+                </Text>
 
-            <Text style={styles.paragraph}>{t('termsParagraph2')}</Text>
-          </View>
+                <View style={styles.companyInfoBox}>
+                  <Text style={styles.companyName}>
+                    {isThai
+                      ? 'ฝ่าย ไอที บริษัท โทรีเซน (กรุงเทพ) จำกัด'
+                      : 'IT Department, Thoresen & Co. (Bangkok) Ltd.'}
+                  </Text>
+                  <Text style={styles.companyAddress}>
+                    {isThai
+                      ? '26/32-34 อาคารอรกานต์ ชั้น 10 ซอยชิดลม ถนนเพลินจิต แขวงลุมพินี เขตปทุมวัน กรุงเทพฯ 10330'
+                      : '26/32-34 Orakarn Building, 10th Floor, Soi Chidlom, Ploenchit Road, Lumpinee, Pathumwan, Bangkok 10330'}
+                  </Text>
+                </View>
 
-          <TouchableOpacity style={styles.acceptBtn}>
-            <Ionicons name="checkmark-circle" size={20} color="#fff" />
-            <Text style={styles.acceptText}>{t('accept')}</Text>
-          </TouchableOpacity>
-          
-        </ScrollView>
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>© 2026 {t('footer')}</Text>
-        </View>
-
-
-        <Modal
-          visible={menuVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setMenuVisible(false)}
-        >
-          <View style={styles.menuOverlay}>
-            <TouchableOpacity
-              style={styles.menuBackdrop}
-              activeOpacity={1}
-              onPress={() => setMenuVisible(false)}
-            />
-
-            <View style={styles.menuBox}>
-              <Text style={styles.menuTitle}>{t('menu')}</Text>
-
-              {menuList.map(item => (
+                {/* Email Action */}
                 <TouchableOpacity
-                  key={item.route}
-                  style={styles.menuItem}
-                  onPress={() => handleMenuPress(item.route)}
+                  style={styles.actionRow}
+                  onPress={handleOpenEmail}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.menuItemText}>{item.label}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#64748B" />
+                  <View style={styles.actionIconBox}>
+                    <Ionicons name="mail" size={16} color={PRIMARY} />
+                  </View>
+                  <Text style={styles.actionText}>Shipping-IT@thoresen.com</Text>
+                  <Ionicons name="open-outline" size={16} color={MUTED} style={styles.actionExternal} />
                 </TouchableOpacity>
-              ))}
+
+                {/* Web Action */}
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={handleOpenWeb}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.actionIconBox}>
+                    <Ionicons name="globe-outline" size={16} color={PRIMARY} />
+                  </View>
+                  <Text style={styles.actionText}>thorconn.com/dashboard/terms</Text>
+                  <Ionicons name="open-outline" size={16} color={MUTED} style={styles.actionExternal} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Accept Button */}
+              <TouchableOpacity
+                style={[styles.acceptBtn, accepted && styles.acceptBtnDone]}
+                onPress={handleAccept}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={accepted ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                  size={20}
+                  color="#fff"
+                />
+                <Text style={styles.acceptText}>
+                  {accepted
+                    ? isThai
+                      ? 'ยอมรับข้อกำหนดแล้ว'
+                      : 'Terms Accepted'
+                    : isThai
+                    ? 'ยอมรับข้อกำหนดและเงื่อนไข'
+                    : 'Accept Terms & Conditions'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.clauseCard}>
+              <Text style={styles.emptyText}>
+                {isThai ? 'ไม่พบข้อมูลข้อกำหนดและเงื่อนไข' : 'No terms and conditions found.'}
+              </Text>
             </View>
-          </View>
-        </Modal>
+          )}
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            © 2026 {t('footer', { defaultValue: 'Thoresen. All rights reserved.' })}
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -164,38 +275,16 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
 
-  header: {
-    height: 78,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-  },
-
-  logo: {
-    width: 170,
-    height: 52,
-  },
-
-  menuBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: PRIMARY,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
   scroll: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: BG,
   },
+
   scrollContent: {
-    paddingBottom: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
+
   backBtn: {
     marginTop: 12,
     width: 78,
@@ -222,6 +311,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+
+  heroTextCol: {
+    flex: 1,
+    paddingRight: 8,
   },
 
   heroSmall: {
@@ -233,7 +332,7 @@ const styles = StyleSheet.create({
 
   heroTitle: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '900',
     marginTop: 4,
   },
@@ -243,7 +342,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 6,
-    maxWidth: 245,
   },
 
   heroIcon: {
@@ -256,25 +354,54 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
 
-  card: {
+  introCard: {
     marginTop: 14,
+    backgroundColor: '#EEF4FF',
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#D4E2FF',
+  },
+
+  introIconWrap: {
+    marginRight: 10,
+    marginTop: 2,
+  },
+
+  introText: {
+    flex: 1,
+    fontSize: 13,
+    color: PRIMARY,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+
+  clauseCard: {
+    marginTop: 12,
     backgroundColor: '#fff',
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
     borderColor: BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
-  sectionHeader: {
+  clauseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
 
   numBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: '#EFF4FF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -283,34 +410,144 @@ const styles = StyleSheet.create({
 
   numText: {
     color: PRIMARY,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '900',
   },
 
-  heading: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '900',
+  clauseTitle: {
+    fontSize: 15,
+    fontWeight: '800',
     color: TEXT,
+  },
+
+  clauseParagraph: {
+    fontSize: 13.5,
+    color: '#374151',
     lineHeight: 22,
   },
 
-  paragraph: {
+  contactCard: {
+    marginTop: 14,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  contactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+
+  contactTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: PRIMARY,
+  },
+
+  contactDesc: {
     fontSize: 13,
     color: MUTED,
-    lineHeight: 21,
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+
+  companyInfoBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: PRIMARY,
+    marginBottom: 12,
+  },
+
+  companyName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT,
+    marginBottom: 4,
+  },
+
+  companyAddress: {
+    fontSize: 12,
+    color: MUTED,
+    lineHeight: 18,
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+
+  actionIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  actionText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: PRIMARY,
+  },
+
+  actionExternal: {
+    marginLeft: 6,
+  },
+
+  loadingBox: {
+    marginTop: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: PRIMARY,
+    fontWeight: '600',
+  },
+
+  emptyText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 
   acceptBtn: {
-    height: 48,
+    height: 50,
     borderRadius: 16,
     backgroundColor: RED,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: 20,
     marginBottom: 8,
     flexDirection: 'row',
-    gap: 7,
+    gap: 8,
+    shadowColor: RED,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+
+  acceptBtnDone: {
+    backgroundColor: '#059669',
   },
 
   acceptText: {
@@ -320,10 +557,10 @@ const styles = StyleSheet.create({
   },
 
   footer: {
-  height: 44,
-  backgroundColor: PRIMARY,
-  justifyContent: 'center',
-  alignItems: 'center',
+    height: 44,
+    backgroundColor: PRIMARY,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderTopLeftRadius: 10,
     borderTopRightRadius: 10,
   },
@@ -332,50 +569,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: '700',
-  
-  },
-
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-
-  menuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
-  menuBox: {
-    position: 'absolute',
-    top: 92,
-    right: 16,
-    width: 280,
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    paddingVertical: 10,
-    elevation: 10,
-  },
-
-  menuTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: PRIMARY,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-
-  menuItem: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF0F5',
-  },
-
-  menuItemText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: PRIMARY,
   },
 });

@@ -9,6 +9,8 @@ import { AboutModule } from './about/about.module';
 import { FaqModule } from './faq/faq.module';
 import { CourseModule } from './course/course.module';
 import { ReportModule } from './report/report.module';
+import { ConditionsModule } from './conditions/conditions.module';
+import { ComplaintModule } from './complaint/complaint.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { ReportModule } from './report/report.module';
     FaqModule,
     CourseModule,
     ReportModule,
+    ConditionsModule,
+    ComplaintModule,
   ],
   controllers: [AppController],
   providers: [AppService],
