@@ -28,7 +28,7 @@ const BORDER = '#E5E7EB';
 const SOFT_BLUE = '#EEF7FF';
 
 const logo = require('../../assets/images/banner/logo-new.png');
-const lessonVideo1 = require('../../assets/videos/test_1.mp4');
+const lessonVideo1 = 'https://cdn.pixabay.com/video/2026/06/24/360429_large.mp4';
 
 const lessonBank: any = {
   '1-1': {
