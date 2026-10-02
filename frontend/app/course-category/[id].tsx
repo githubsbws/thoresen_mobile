@@ -52,21 +52,19 @@ const commonChips = [
   '02 - Cargo Care',
   '03 - Maritime Labour',
   '04 - Navigation',
-  '05 - Technical',
-  '06 - Quality and Safety',
-  '07 - Other Course',
-  '08 - Technical',
+  '06 - Technical',
+  '07 - Quality and Safety',
+  '08 - Other Course',
 ];
 
 const chipRoute: Record<string, string> = {
-  '01 - Management': '1',
-  '02 - Cargo Care': '2',
-  '03 - Maritime Labour': '3',
-  '04 - Navigation': '4',
-  '05 - Technical': '5',
-  '06 - Quality and Safety': '6',
-  '07 - Other Course': '7',
-  '08 - Technical': '8',
+  '01 - Management': '107',
+  '02 - Cargo Care': '142',
+  '03 - Maritime Labour': '109',
+  '04 - Navigation': '144',
+  '06 - Technical': '134',
+  '07 - Quality and Safety': '97',
+  '08 - Other Course': '121',
 };
 
 const menuList = [
@@ -509,16 +507,22 @@ function CourseCard({
       }
     >
       <View style={styles.periodBox}>
-        <Text style={styles.periodText}>
-          {item.courseDateStart &&
-          item.courseDateEnd
-            ? `Period ${item.courseDayLearn ?? 30} Day ( ${formatDate(
-                item.courseDateStart,
-              )} - ${formatDate(
-                item.courseDateEnd,
-              )} )`
-            : 'Course Period'}
-        </Text>
+        <View style={styles.generationRow}>
+          <Text style={styles.generationText}>
+            Generation {item.genTitle ?? '-'}
+          </Text>
+
+          <Text style={styles.periodText}>
+            {item.genPeriodStart &&
+            item.genPeriodEnd
+              ? `Period ${formatDate(
+                  item.genPeriodStart,
+                )} - ${formatDate(
+                  item.genPeriodEnd,
+                )}`
+              : 'Course Period'}
+          </Text>
+        </View>
       </View>
 
       {item.image ? (
@@ -970,6 +974,17 @@ const styles = StyleSheet.create({
     backgroundColor: LIGHT_BLUE,
     paddingVertical: 9,
     paddingHorizontal: 12,
+  },
+  generationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  generationText: {
+    fontSize: 11,
+    color: PRIMARY,
+    fontWeight: '900',
   },
 
   periodText: {

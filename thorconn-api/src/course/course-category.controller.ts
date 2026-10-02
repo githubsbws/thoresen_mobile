@@ -6,7 +6,7 @@ import {
   Query,
 } from '@nestjs/common';
 
-import { CourseService } from '../course/course.service';
+import { CourseService } from './course.service';
 
 @Controller('course-category')
 export class CourseCategoryController {

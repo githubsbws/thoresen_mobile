@@ -9,10 +9,10 @@
     "scheme": "thorconn",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.thorconn.app"
+      "bundleIdentifier": "com.thoresen.thorconn"
     },
     "android": {
-      "package": "com.thorconn.app"
+      "package": "com.thoresen.thorconn"
     },
     "plugins": [
       "expo-router",

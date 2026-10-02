@@ -132,7 +132,6 @@ export class CourseService {
         where: {
           active: 'y',
           status: '1',
-          course_status: 1,
           lang_id: langId,
 
           tbl_category: {
@@ -210,6 +209,31 @@ export class CourseService {
     course: any,
     langId: number,
   ) {
+    const generation =
+    await this.getCurrentGeneration(
+      course.course_id,
+    );
+
+    const genId =
+      generation?.gen_id ?? 0;
+    const logStartCourse =
+      genId > 0
+        ? await this.prisma.tbl_log_startcourse.findFirst({
+            where: {
+              course_id: course.course_id,
+              user_id: userId,
+              active: 'y',
+              gen_id: genId,
+            },
+            orderBy: {
+              id: 'desc',
+            },
+          })
+        : null;
+    const courseDayLearn =
+      logStartCourse?.course_day ??
+      course.course_day_learn ??
+      null;
     const lessons =
       await this.prisma.tbl_lesson.findMany({
         where: {
@@ -235,6 +259,7 @@ export class CourseService {
             await this.checkLessonPass(
               userId,
               lesson.id,
+              genId,
             );
 
           return {
@@ -279,29 +304,70 @@ export class CourseService {
 
     return {
       id: course.course_id,
+
       courseNumber:
         course.course_number ?? null,
+
       title:
         course.course_title ?? null,
+
       shortTitle:
         course.course_short_title ?? null,
+
       detail:
         course.course_detail ?? null,
+
       image: course.course_picture
-      ? this.getMediaUrl(
-          `courseonline/${course.course_id}/original/${course.course_picture}`,
-        )
-      : null,
+        ? this.getMediaUrl(
+            `courseonline/${course.course_id}/original/${course.course_picture}`,
+          )
+        : null,
+
       categoryId:
         course.cate_id ?? null,
+
+      // =========================
+      // Generation
+      // =========================
+      genId:
+        generation?.gen_id ?? 0,
+
+      genTitle:
+        generation?.gen_title ?? null,
+
+      genPeriodStart:
+        generation?.gen_period_start ?? null,
+
+      genPeriodEnd:
+        generation?.gen_period_end ?? null,
+
+      // =========================
+      // User course period
+      // =========================
+      startDate:
+        logStartCourse?.start_date ?? null,
+
+      endDate:
+        logStartCourse?.end_date ?? null,
+
+      courseDayLearn,
+
+      // =========================
+      // Progress
+      // =========================
       lessonCount:
         totalLessons,
+
       learned:
         passedLessons > 0,
+
       passed:
         status === 'completed',
+
       status,
+
       progress,
+
       passedLessons,
     };
   }
@@ -336,7 +402,6 @@ async getCoursesByCategory(
         cate_id: categoryId,
         active: 'y',
         status: '1',
-        course_status: 1,
         lang_id: langId,
       },
       orderBy: [
@@ -379,40 +444,47 @@ async getCoursesByCategory(
     },
   };
 }
-  private async getGenId(
+private async getGenId(
+  courseId: number,
+): Promise<number> {
+  const generation =
+    await this.getCurrentGeneration(courseId);
+
+  return generation?.gen_id ?? 0;
+}
+
+  private async getCurrentGeneration(
     courseId: number,
-  ): Promise<number> {
+  ) {
     const today = new Date();
 
-    const generation =
-      await this.prisma.tbl_course_generation.findFirst({
-        where: {
-          active: 'y',
-          status: '1',
-          course_id: courseId,
+    return this.prisma.tbl_course_generation.findFirst({
+      where: {
+        active: 'y',
+        status: '1',
+        course_id: courseId,
 
-          OR: [
-            {
-              gen_period_start: null,
-              gen_period_end: null,
+        OR: [
+          {
+            gen_period_start: null,
+            gen_period_end: null,
+          },
+          {
+            gen_period_start: {
+              lte: today,
             },
-            {
-              gen_period_start: {
-                lte: today,
-              },
-              gen_period_end: {
-                gte: today,
-              },
+            gen_period_end: {
+              gte: today,
             },
-          ],
-        },
-      });
+          },
+        ],
+      },
 
-    if (!generation) {
-      return 0;
-    }
-
-    return generation.gen_id;
+      // กันกรณีมีมากกว่า 1 generation ที่เข้าเงื่อนไข
+      orderBy: {
+        gen_id: 'desc',
+      },
+    });
   }
 
   async checkLessonPass(
@@ -840,7 +912,6 @@ private async canLearnLesson(
         course_id: courseId,
         active: 'y',
         status: '1',
-        course_status: 1,
         lang_id: langId,
       },
       include: {
@@ -856,8 +927,30 @@ private async canLearnLesson(
     };
   }
 
-  const genId = await this.getGenId(courseId);
+  const generation =
+    await this.getCurrentGeneration(courseId);
 
+  const genId =
+    generation?.gen_id ?? 0;
+  
+  const logStartCourse =
+    genId > 0
+      ? await this.prisma.tbl_log_startcourse.findFirst({
+          where: {
+            course_id: courseId,
+            user_id: userId,
+            active: 'y',
+            gen_id: genId,
+          },
+          orderBy: {
+            id: 'desc',
+          },
+        })
+      : null;
+  const courseDayLearn =
+    logStartCourse?.course_day ??
+    course.course_day_learn ??
+    null;
   const lessons =
     await this.prisma.tbl_lesson.findMany({
       where: {
@@ -935,8 +1028,25 @@ private async canLearnLesson(
         courseDateEnd:
           course.course_date_end ?? null,
 
-        courseDayLearn:
-          course.course_day_learn ?? null,
+        genId:
+          generation?.gen_id ?? 0,
+
+        genTitle:
+          generation?.gen_title ?? null,
+
+        genPeriodStart:
+          generation?.gen_period_start ?? null,
+
+        genPeriodEnd:
+          generation?.gen_period_end ?? null,
+
+        startDate:
+          logStartCourse?.start_date ?? null,
+
+        endDate:
+          logStartCourse?.end_date ?? null,
+
+        courseDayLearn,
       },
 
 

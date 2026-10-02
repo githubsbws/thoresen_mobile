@@ -36,6 +36,10 @@ export interface Course {
     | string;
 
   genId?: number;
+  genTitle?: string | null;
+  genPeriodStart?: string | null;
+  genPeriodEnd?: string | null;
+
 
   progress: number;
   passedLessons?: number;
@@ -66,7 +70,7 @@ export interface CourseCategoryResponse {
   success: boolean;
   message?: string;
   data: {
-    category: CourseCategory;
+    category: CourseCategory | null;
     courses: Course[];
   };
 }
