@@ -44,7 +44,7 @@ type VideoItem = {
   id: string;
   title: string;
   image: string;
-  source: number;
+  source: string;
 };
 
 const tabs = [
@@ -74,7 +74,7 @@ const videos: VideoItem[] = [
     image:
       'https://images.unsplash.com/photo-1552664730-d307ca884978?w=600',
     // เปลี่ยนเป็น URL ไฟล์ .mp4 จริงของบริษัทได้
-    source: require('../../assets/videos/training-video.mp4'),
+    source: 'https://cdn.pixabay.com/video/2026/06/24/360429_large.mp4',
   },
 ];
 
