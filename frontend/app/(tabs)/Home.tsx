@@ -46,7 +46,7 @@ const shipRightImg = require("../../assets/images/banner/ship-right.png");
 const roadImg = require("../../assets/images/banner/tanon.png");
 const carImg = require("../../assets/images/banner/car1.png");
 const trainImg = require("../../assets/images/banner/rodfi.png");
-const reportVideo1 = require("../../assets/videos/test_1.mp4");
+// const reportVideo1 = require("../../assets/videos/test_1.mp4");
 
 
 
