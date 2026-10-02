@@ -1,21 +1,66 @@
-import React, { useEffect, useState } from 'react';
+/**
+ * ============================================================
+ * app/lesson/[id].tsx  —  หน้าดูวิดีโอบทเรียน
+ * (อย่าสับสนกับ app/course/[id].tsx และ app/course-category/[id].tsx ที่ชื่อไฟล์เหมือนกัน)
+ * ============================================================
+ * ไฟล์นี้เปลี่ยนมากที่สุด เพราะของเดิมเป็นข้อมูลจำลอง (ไม่ต่อ backend)
+ *
+ * [FIX]  เลิกใช้ lessonBank (hard-code) + video = null -> โหลดบทเรียน/วิดีโอจริงจาก
+ *        getCourseDetail ตาม lessonId + fileId ที่หน้า course/[id] ส่งมา
+ *        (เดิม lessonId ที่ไม่มีใน bank จะแสดง "Management Introduction" แทน)
+ * [FIX]  บันทึกความคืบหน้าที่ server (markFileCompleted) เมื่อวิดีโอเล่นจบ (event 'playToEnd')
+ *        เดิมเก็บใน AsyncStorage เครื่องเดียว -> สถานะบทไม่เคยเปลี่ยน บทถัดไปไม่ปลดล็อก
+ * [REMOVE] ปุ่ม "กดเมื่อเรียนจบบทนี้" ที่กดข้ามโดยไม่ต้องดูวิดีโอได้
+ * [FIX]  ปุ่มทำข้อสอบหลังเรียนใช้ postTest.canTake จาก backend และส่ง lessonId ไปหน้า exam
+ * [FIX]  แถว "ทำข้อสอบก่อนเรียน" แสดงสถานะจริง (เดิม hard-code เป็น Completed เสมอ)
+ * [FIX]  โน้ตบันทึกลง tbl_learn_note จริงผ่าน backend (เดิมเก็บ AsyncStorage ในเครื่องเท่านั้น
+ *        หายถ้าเปลี่ยนเครื่อง/ล้างแอป/ล็อกอินเครื่องอื่น)
+ * [FIX]  ไม่ fallback ไปคอร์ส/บทที่ 1 เมื่อ param หาย แต่แสดงข้อความแทน
+ * [REMOVE] โค้ดเมนู/Modal ที่ไม่มีที่เรียกเปิด, logo/style ที่ไม่ได้ใช้
+ *
+ * ⚠ ต้องตั้ง path วิดีโอใน backend (getVideoUrl ใน course.service.ts) ให้ตรงกับที่เก็บไฟล์จริง
+ * ⚠ ต้องสร้างตาม backend: endpoint POST .../complete (มีใน course.controller.ts แล้ว)
+ */
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  TextInput,
-  Modal,
+  ActivityIndicator,
   Alert,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  StyleSheet,
 } from 'react-native';
+
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+} from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import AppHeader from '../../src/components/AppHeader';
+import { useAuth } from '../../src/context/AuthContext';
+
+import {
+  CourseDetail,
+  CourseLesson,
+  LessonNote,
+  LessonVideo,
+  addLessonNote,
+  getCourseDetail,
+  getLessonNotes,
+  markFileCompleted,
+} from '../../src/services/course';
 
 const PRIMARY = '#001B74';
 const RED = '#E30613';
@@ -27,133 +72,337 @@ const MUTED = '#6B7280';
 const BORDER = '#E5E7EB';
 const SOFT_BLUE = '#EEF7FF';
 
-const logo = require('../../assets/images/banner/logo-new.png');
-const lessonVideo1 = require('../../assets/videos/test_1.mp4');
-
-const lessonBank: any = {
-  '1-1': {
-    title: 'Management Introduction',
-    chapter: 'บทที่ 1',
-    duration: '30 นาที',
-    video: lessonVideo1,
-  },
-  '1-2': {
-    title: 'Planning and Organizing',
-    chapter: 'บทที่ 2',
-    duration: '26 นาที',
-    video: lessonVideo1,
-  },
-  '1-3': {
-    title: 'Leadership Skills',
-    chapter: 'บทที่ 3',
-    duration: '35 นาที',
-    video: lessonVideo1,
-  },
-  '2-1': {
-    title: 'Cargo Handling',
-    chapter: 'บทที่ 1',
-    duration: '28 นาที',
-    video: lessonVideo1,
-  },
-  '2-2': {
-    title: 'Cargo Storage',
-    chapter: 'บทที่ 2',
-    duration: '31 นาที',
-    video: lessonVideo1,
-  },
-};
-
-const menuList = [
-  'Home',
-  'About Us',
-  'Course',
-  'How to Use',
-  'FAQ',
-  'Contact Us',
-  'Mess-room',
-  'Library',
-  'Terms & Conditions',
-];
+// ============================================================
+// Screen: โหลดข้อมูล แล้วส่งต่อให้ LessonContent
+// ============================================================
 
 export default function LessonVideoScreen() {
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [note, setNote] = useState('');
-  const [savedNotes, setSavedNotes] = useState<string[]>([]);
-  const [lessonCompleted, setLessonCompleted] = useState(false);
-
   const params = useLocalSearchParams<{
-    id: string;
+    id: string; // course id
+    lessonId?: string;
+    fileId?: string;
     chapter?: string;
   }>();
 
-  const courseId = String(params.id ?? '1');
-  const chapterNo = Number(params.chapter ?? 1);
-  const lessonKey = `${courseId}-${chapterNo}`;
+  const { user } = useAuth();
 
-  const lesson = lessonBank[lessonKey] ?? lessonBank['1-1'];
+  const courseId = Number(params.id);
+  const lessonId = Number(params.lessonId);
+  const userId = user?.id ? Number(user.id) : null;
 
-  const player = useVideoPlayer(lesson.video, player => {
-    player.loop = false;
+  const [detail, setDetail] = useState<CourseDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const hasData = useRef(false);
+
+  const load = useCallback(async () => {
+    // [FIX] เดิม fallback เป็นคอร์ส/บทที่ 1 -> ตอนนี้แจ้งว่าข้อมูลไม่ครบ
+    if (!courseId || !lessonId) {
+      setError('ไม่พบข้อมูลบทเรียน');
+      setLoading(false);
+      return;
+    }
+
+    if (!userId) {
+      setError('ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (!hasData.current) {
+        setLoading(true);
+      }
+
+      setError(null);
+
+      const response = await getCourseDetail(courseId, userId, 1);
+
+      if (!response.success || !response.data) {
+        setError(response.message ?? 'ไม่พบข้อมูลบทเรียน');
+        return;
+      }
+
+      hasData.current = true;
+      setDetail(response.data);
+    } catch (err) {
+      if (__DEV__) {
+        console.log('LESSON LOAD ERROR:', err);
+      }
+
+      if (!hasData.current) {
+        setError('ไม่สามารถโหลดบทเรียนได้');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [courseId, lessonId, userId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  const lessonIndex =
+    detail?.lessons.findIndex((item) => item.id === lessonId) ?? -1;
+  const lesson: CourseLesson | undefined =
+    lessonIndex >= 0 ? detail?.lessons[lessonIndex] : undefined;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={PRIMARY} />
+          <Text style={styles.loadingText}>กำลังโหลดบทเรียน...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !detail || !lesson || userId == null) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>
+            {error ?? 'ไม่พบข้อมูลบทเรียน'}
+          </Text>
+
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.retryText}>กลับ</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // บทที่ยังไม่ปลดล็อก ห้ามเข้าเรียน (backend ก็ตรวจซ้ำตอนบันทึก)
+  if (!lesson.canLearn) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>
+            บทเรียนนี้ยังไม่ปลดล็อก กรุณาเรียนบทก่อนหน้าให้จบก่อน
+          </Text>
+
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.retryText}>กลับ</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // เลือกวิดีโอ: ตาม fileId ที่ส่งมา ไม่งั้นตัวแรกที่ยังไม่จบ ไม่งั้นตัวแรก
+  const video: LessonVideo | undefined =
+    lesson.videos.find((item) => String(item.id) === params.fileId) ??
+    lesson.videos.find((item) => item.status !== 'pass') ??
+    lesson.videos[0];
+
+  return (
+    <LessonContent
+      // key = เปลี่ยนวิดีโอแล้วสร้าง player ใหม่ (source ของ useVideoPlayer ต้องนิ่ง)
+      key={video?.id ?? 'no-video'}
+      courseId={courseId}
+      userId={userId}
+      lesson={lesson}
+      video={video}
+      chapterNo={lessonIndex + 1}
+      onReload={load}
+    />
+  );
+}
+
+// ============================================================
+// LessonContent: player + รายการ + โน้ต
+// ============================================================
+
+function LessonContent({
+  courseId,
+  userId,
+  lesson,
+  video,
+  chapterNo,
+  onReload,
+}: {
+  courseId: number;
+  userId: number;
+  lesson: CourseLesson;
+  video?: LessonVideo;
+  chapterNo: number;
+  onReload: () => void;
+}) {
+  const [note, setNote] = useState('');
+  const [savedNotes, setSavedNotes] = useState<LessonNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [savingNote, setSavingNote] = useState(false);
+
+  const completedRef = useRef(video?.status === 'pass');
+  const savingRef = useRef(false);
+  const [videoDone, setVideoDone] = useState(video?.status === 'pass');
+
+  const player = useVideoPlayer(video?.url ?? null, (instance) => {
+    instance.loop = false;
   });
 
-  useEffect(() => {
-    const loadProgress = async () => {
-      const saved = await AsyncStorage.getItem(`course_progress_${courseId}`);
+  const lessonDone = lesson.status === 'pass';
+  const doneVideos = lesson.videos.filter((item) => item.status === 'pass').length;
 
-      if (saved) {
-        const data = JSON.parse(saved);
-        const watchedVideos: string[] = data.watchedVideos ?? [];
-        setLessonCompleted(watchedVideos.includes(lessonKey));
+  // ------------------------------------------------------------
+  // [FIX] บันทึกการเรียนเมื่อวิดีโอเล่นจบจริง
+  // ------------------------------------------------------------
+  useEffect(() => {
+    if (!video) {
+      return;
+    }
+
+    const subscription = player.addListener('playToEnd', async () => {
+      if (completedRef.current || savingRef.current) {
+        return;
+      }
+
+      savingRef.current = true;
+
+      try {
+        const response = await markFileCompleted(
+          courseId,
+          lesson.id,
+          video.id,
+          userId,
+        );
+
+        if (!response.success) {
+          throw new Error('mark complete failed');
+        }
+
+        completedRef.current = true;
+        setVideoDone(true);
+
+        const lessonFinished = response.data.lessonStatus === 'pass';
+
+        Alert.alert(
+          'สำเร็จ',
+          lessonFinished
+            ? 'เรียนจบบทนี้แล้ว สามารถทำแบบทดสอบหลังเรียนได้'
+            : 'บันทึกการดูวิดีโอแล้ว',
+          [
+            {
+              text: 'ตกลง',
+              onPress: () => {
+                if (lessonFinished) {
+                  router.back();
+                } else {
+                  onReload();
+                }
+              },
+            },
+          ],
+        );
+      } catch (err) {
+        if (__DEV__) {
+          console.log('MARK COMPLETE ERROR:', err);
+        }
+
+        Alert.alert(
+          'บันทึกไม่สำเร็จ',
+          'ไม่สามารถบันทึกความคืบหน้าได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วดูวิดีโอให้จบอีกครั้ง',
+        );
+      } finally {
+        savingRef.current = false;
+      }
+    });
+
+    return () => subscription.remove();
+  }, [player, video, courseId, lesson.id, userId, onReload]);
+
+  // ------------------------------------------------------------
+  // [FIX] โน้ต: บันทึกลง tbl_learn_note จริงผ่าน backend
+  // (เดิมเก็บใน AsyncStorage ในเครื่องเท่านั้น หายถ้าเปลี่ยนเครื่อง/ล้างแอป/ย้ายไปเครื่องอื่น)
+  // ------------------------------------------------------------
+  useEffect(() => {
+    let active = true;
+
+    const loadNotes = async () => {
+      try {
+        setNotesLoading(true);
+
+        const response = await getLessonNotes(courseId, lesson.id, userId);
+
+        if (active && response.success) {
+          setSavedNotes(response.data);
+        }
+      } catch (err) {
+        if (__DEV__) {
+          console.log('LOAD NOTES ERROR:', err);
+        }
+        // โหลดโน้ตไม่สำเร็จ ไม่ต้อง block การดูวิดีโอ แค่ไม่มีโน้ตให้เห็น
+      } finally {
+        if (active) {
+          setNotesLoading(false);
+        }
       }
     };
 
-    loadProgress();
-  }, [courseId, lessonKey]);
+    loadNotes();
 
-  const completeLesson = async () => {
-    const key = `course_progress_${courseId}`;
-    const saved = await AsyncStorage.getItem(key);
-    const oldData = saved ? JSON.parse(saved) : {};
-
-    const watchedVideos: string[] = oldData.watchedVideos ?? [];
-    const nextWatchedVideos = watchedVideos.includes(lessonKey)
-      ? watchedVideos
-      : [...watchedVideos, lessonKey];
-
-    const nextData = {
-      ...oldData,
-      watchedVideos: nextWatchedVideos,
+    return () => {
+      active = false;
     };
+  }, [courseId, lesson.id, userId]);
 
-    await AsyncStorage.setItem(key, JSON.stringify(nextData));
-    setLessonCompleted(true);
+  const saveNote = async () => {
+    const text = note.trim();
 
-    Alert.alert('สำเร็จ', 'สามารถทำแบบทดสอบหลังเรียนได้แล้ว', [
-      {
-        text: 'ตกลง',
-        onPress: () => router.back(),
+    if (!text || savingNote) {
+      return;
+    }
+
+    try {
+      setSavingNote(true);
+
+      const response = await addLessonNote(courseId, lesson.id, userId, text);
+
+      if (!response.success) {
+        throw new Error('save note failed');
+      }
+
+      // [FIX] เอาโน้ตที่ backend บันทึกจริง (มี id/เวลาที่ถูกต้อง) มาต่อหน้าลิสต์
+      setSavedNotes((prev) => [response.data, ...prev]);
+      setNote('');
+    } catch (err) {
+      if (__DEV__) {
+        console.log('SAVE NOTE ERROR:', err);
+      }
+
+      Alert.alert('บันทึกโน้ตไม่สำเร็จ', 'กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const openExam = (examType: 'pretest' | 'posttest') => {
+    router.push({
+      pathname: `/exam/${courseId}`,
+      params: {
+        lessonId: String(lesson.id),
+        chapter: String(lesson.lessonNo ?? chapterNo),
+        examType,
       },
-    ]);
+    } as any);
   };
 
-  const handleMenuPress = (item: string) => {
-    setMenuVisible(false);
+  const selectVideo = (item: LessonVideo) => {
+    if (item.id === video?.id) {
+      return;
+    }
 
-    if (item === 'Home') router.push('/(tabs)/Home' as any);
-    if (item === 'About Us') router.push('/(tabs)/about' as any);
-    if (item === 'Course') router.push('/(tabs)/courses' as any);
-    if (item === 'Library') router.push('/(tabs)/library' as any);
-    if (item === 'How to Use') router.push('/(tabs)/how-to-use' as any);
-    if (item === 'FAQ') router.push('/(tabs)/faq' as any);
-    if (item === 'Terms & Conditions') router.push('/(tabs)/terms' as any);
-    if (item === 'Contact Us') router.push('/(tabs)/contact' as any);
-    if (item === 'Mess-room') router.push('/(tabs)/Mess-room' as any);
-  };
-
-  const saveNote = () => {
-    if (!note.trim()) return;
-    setSavedNotes([...savedNotes, note.trim()]);
-    setNote('');
+    router.setParams({ fileId: String(item.id) });
   };
 
   return (
@@ -170,7 +419,10 @@ export default function LessonVideoScreen() {
           <AppHeader />
 
           <View style={styles.pageBox}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.back()}
+            >
               <Ionicons name="chevron-back" size={15} color="#fff" />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -184,28 +436,30 @@ export default function LessonVideoScreen() {
                 <Text style={styles.heroSmall}>LESSON VIDEO</Text>
                 <Text style={styles.heroTitle}>วิดีโอบทเรียน</Text>
                 <Text style={styles.heroSub}>
-                  {lesson.chapter} : {lesson.title}
+                  บทที่ {chapterNo} : {lesson.title}
                 </Text>
 
                 <View style={styles.heroBottom}>
                   <View style={styles.heroBadge}>
-                    <Ionicons name="time-outline" size={13} color="#fff" />
-                    <Text style={styles.heroBadgeText}>{lesson.duration}</Text>
+                    <Ionicons name="videocam-outline" size={13} color="#fff" />
+                    <Text style={styles.heroBadgeText}>
+                      {doneVideos}/{lesson.videos.length} วิดีโอ
+                    </Text>
                   </View>
 
                   <View
                     style={[
                       styles.heroBadge,
-                      { backgroundColor: lessonCompleted ? GREEN : RED },
+                      { backgroundColor: lessonDone ? GREEN : RED },
                     ]}
                   >
                     <Ionicons
-                      name={lessonCompleted ? 'checkmark-circle' : 'play-circle'}
+                      name={lessonDone ? 'checkmark-circle' : 'play-circle'}
                       size={13}
                       color="#fff"
                     />
                     <Text style={styles.heroBadgeText}>
-                      {lessonCompleted ? 'Completed' : 'Learning'}
+                      {lessonDone ? 'Completed' : 'Learning'}
                     </Text>
                   </View>
                 </View>
@@ -213,52 +467,68 @@ export default function LessonVideoScreen() {
             </View>
 
             <View style={styles.videoCard}>
-              <VideoView
-                style={styles.video}
-                player={player}
-                allowsFullscreen
-                allowsPictureInPicture
-                nativeControls
-              />
+              {video?.url ? (
+                <VideoView
+                  style={styles.video}
+                  player={player}
+                  allowsFullscreen
+                  allowsPictureInPicture
+                  nativeControls
+                />
+              ) : (
+                // [ADD] ไม่มีวิดีโอ/ไม่มี url
+                <View style={[styles.video, styles.noVideo]}>
+                  <Ionicons name="videocam-off-outline" size={36} color="#9CA3AF" />
+                  <Text style={styles.noVideoText}>
+                    {video ? 'ไม่พบไฟล์วิดีโอ' : 'บทเรียนนี้ไม่มีวิดีโอ'}
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.videoInfo}>
-                <Text style={styles.videoTitle}>{lesson.title}</Text>
+                <Text style={styles.videoTitle}>
+                  {video?.name ?? video?.filename ?? lesson.title}
+                </Text>
                 <Text style={styles.videoDesc}>
                   Watch this lesson carefully before taking the post-test.
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.completeBtn,
-                  lessonCompleted && styles.completeBtnDone,
-                ]}
-                onPress={completeLesson}
-                disabled={lessonCompleted}
-              >
-                <Ionicons
-                  name={lessonCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                  size={18}
-                  color="#fff"
-                />
+              {/* [FIX] แทนปุ่ม "กดเมื่อเรียนจบ" เดิม: ระบบบันทึกให้เองเมื่อดูจบ */}
+              {video && (
+                <View
+                  style={[
+                    styles.completeBtn,
+                    videoDone && styles.completeBtnDone,
+                    !videoDone && { backgroundColor: '#9CA3AF' },
+                  ]}
+                >
+                  <Ionicons
+                    name={videoDone ? 'checkmark-circle' : 'time-outline'}
+                    size={18}
+                    color="#fff"
+                  />
 
-                <Text style={styles.completeBtnText}>
-                  {lessonCompleted ? 'เรียนจบบทนี้แล้ว' : 'กดเมื่อเรียนจบบทนี้'}
-                </Text>
-              </TouchableOpacity>
+                  <Text style={styles.completeBtnText}>
+                    {videoDone
+                      ? 'ดูวิดีโอนี้จบแล้ว'
+                      : 'ดูวิดีโอให้จบเพื่อบันทึกความคืบหน้า'}
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.infoRow}>
               <View style={styles.infoBox}>
-                <Ionicons name="time-outline" size={22} color={BLUE} />
-                <Text style={styles.infoLabel}>ระยะเวลา</Text>
-                <Text style={styles.infoValue}>{lesson.duration}</Text>
+                <Ionicons name="videocam-outline" size={22} color={BLUE} />
+                <Text style={styles.infoLabel}>จำนวนวิดีโอ</Text>
+                <Text style={styles.infoValue}>{lesson.videos.length}</Text>
               </View>
 
               <View style={styles.infoBox}>
                 <Ionicons name="book-outline" size={22} color={BLUE} />
                 <Text style={styles.infoLabel}>บทเรียน</Text>
-                <Text style={styles.infoValue}>{lesson.chapter}</Text>
+                <Text style={styles.infoValue}>บทที่ {chapterNo}</Text>
               </View>
             </View>
 
@@ -268,38 +538,94 @@ export default function LessonVideoScreen() {
                 <Text style={styles.cardHeaderText}>รายการบทเรียน</Text>
               </View>
 
+              {/* PRE TEST — [FIX] แสดงสถานะจริง */}
               <View style={styles.lessonRow}>
-                <View style={styles.lessonCircleDone}>
-                  <Ionicons name="checkmark" size={13} color="#fff" />
-                </View>
-                <Text style={styles.lessonText}>ทำข้อสอบก่อนเรียน</Text>
-                <Text style={styles.lessonStatus}>Completed</Text>
-              </View>
-
-              <View style={styles.lessonRowActive}>
                 <View
-                  style={[
-                    styles.lessonCircleActive,
-                    lessonCompleted && { backgroundColor: GREEN },
-                  ]}
+                  style={
+                    !lesson.preTest.hasTest || lesson.preTest.completed
+                      ? styles.lessonCircleDone
+                      : styles.lessonCircle
+                  }
                 >
                   <Ionicons
-                    name={lessonCompleted ? 'checkmark' : 'play'}
-                    size={12}
-                    color="#fff"
+                    name={
+                      !lesson.preTest.hasTest || lesson.preTest.completed
+                        ? 'checkmark'
+                        : 'document-text-outline'
+                    }
+                    size={13}
+                    color={
+                      !lesson.preTest.hasTest || lesson.preTest.completed
+                        ? '#fff'
+                        : BLUE
+                    }
                   />
                 </View>
-                <Text style={styles.lessonTextActive}>วิดีโอ {lesson.chapter}</Text>
-                <Text
-                  style={[
-                    styles.lessonStatusActive,
-                    lessonCompleted && { color: GREEN },
-                  ]}
-                >
-                  {lessonCompleted ? 'Completed' : 'Playing'}
-                </Text>
+
+                <Text style={styles.lessonText}>ทำข้อสอบก่อนเรียน</Text>
+
+                {!lesson.preTest.hasTest ? (
+                  <Text style={styles.lessonStatus}>ไม่มีข้อสอบ</Text>
+                ) : lesson.preTest.completed ? (
+                  <Text style={styles.lessonStatus}>Completed</Text>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.examBtn}
+                    onPress={() => openExam('pretest')}
+                  >
+                    <Text style={styles.examBtnText}>ทำข้อสอบ</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
+              {/* VIDEOS — [FIX] แสดงทุกวิดีโอของบท (เดิมมีแถวเดียว) */}
+              {lesson.videos.map((item, index) => {
+                const isCurrent = item.id === video?.id;
+                const isDone = item.status === 'pass';
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    activeOpacity={0.8}
+                    style={isCurrent ? styles.lessonRowActive : styles.lessonRow}
+                    onPress={() => selectVideo(item)}
+                  >
+                    <View
+                      style={
+                        isDone
+                          ? [styles.lessonCircleActive, { backgroundColor: GREEN }]
+                          : isCurrent
+                            ? styles.lessonCircleActive
+                            : styles.lessonCircle
+                      }
+                    >
+                      <Ionicons
+                        name={isDone ? 'checkmark' : 'play'}
+                        size={12}
+                        color={isDone || isCurrent ? '#fff' : BLUE}
+                      />
+                    </View>
+
+                    <Text
+                      style={isCurrent ? styles.lessonTextActive : styles.lessonText}
+                      numberOfLines={1}
+                    >
+                      วิดีโอ {index + 1}: {item.name ?? item.filename}
+                    </Text>
+
+                    <Text
+                      style={[
+                        isCurrent ? styles.lessonStatusActive : styles.lessonStatus,
+                        isDone && { color: GREEN },
+                      ]}
+                    >
+                      {isDone ? 'Completed' : isCurrent ? 'Playing' : 'ยังไม่ดู'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* POST TEST — [FIX] ใช้ canTake จาก backend */}
               <View style={styles.lessonRow}>
                 <View style={styles.lessonCircle}>
                   <Ionicons name="document-text-outline" size={12} color={BLUE} />
@@ -307,31 +633,27 @@ export default function LessonVideoScreen() {
 
                 <Text style={styles.lessonText}>ทำข้อสอบหลังเรียน</Text>
 
-                <TouchableOpacity
-                  style={[
-                    styles.examBtn,
-                    !lessonCompleted && styles.examBtnDisabled,
-                  ]}
-                  disabled={!lessonCompleted}
-                  onPress={() =>
-                    router.push({
-                      pathname: `/exam/${courseId}`,
-                      params: {
-                        chapter: String(chapterNo),
-                        examType: 'posttest',
-                      },
-                    } as any)
-                  }
-                >
-                  <Text
+                {!lesson.postTest.hasTest ? (
+                  <Text style={styles.lessonStatus}>ไม่มีข้อสอบ</Text>
+                ) : (
+                  <TouchableOpacity
                     style={[
-                      styles.examBtnText,
-                      !lessonCompleted && styles.examBtnTextDisabled,
+                      styles.examBtn,
+                      !lesson.postTest.canTake && styles.examBtnDisabled,
                     ]}
+                    disabled={!lesson.postTest.canTake}
+                    onPress={() => openExam('posttest')}
                   >
-                    {lessonCompleted ? 'ทำข้อสอบ' : 'ล็อกอยู่'}
-                  </Text>
-                </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.examBtnText,
+                        !lesson.postTest.canTake && styles.examBtnTextDisabled,
+                      ]}
+                    >
+                      {lesson.postTest.canTake ? 'ทำข้อสอบ' : 'ล็อกอยู่'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
@@ -351,8 +673,10 @@ export default function LessonVideoScreen() {
 
               <TextInput
                 value={note}
-                onChangeText={text => {
-                  if (text.length <= 500) setNote(text);
+                onChangeText={(text) => {
+                  if (text.length <= 500) {
+                    setNote(text);
+                  }
                 }}
                 placeholder="พิมพ์โน้ตจากบทเรียนนี้..."
                 placeholderTextColor="#9CA3AF"
@@ -361,21 +685,40 @@ export default function LessonVideoScreen() {
                 textAlignVertical="top"
               />
 
-              <TouchableOpacity style={styles.noteBtn} onPress={saveNote}>
-                <Ionicons name="save-outline" size={16} color="#fff" />
-                <Text style={styles.noteBtnText}>บันทึกโน้ต</Text>
+              <TouchableOpacity
+                style={[styles.noteBtn, savingNote && { opacity: 0.7 }]}
+                disabled={savingNote}
+                onPress={saveNote}
+              >
+                {savingNote ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={16} color="#fff" />
+                    <Text style={styles.noteBtnText}>บันทึกโน้ต</Text>
+                  </>
+                )}
               </TouchableOpacity>
 
-              {savedNotes.length > 0 && (
-                <View style={styles.savedBox}>
-                  {savedNotes.map((item, index) => (
-                    <View key={`${item}-${index}`} style={styles.savedItem}>
-                      <Text style={styles.savedNote}>
-                        {index + 1}. {item}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
+              {/* [FIX] โน้ตมาจาก backend จริงแล้ว (LessonNote object ไม่ใช่ string เปล่าๆ) */}
+              {notesLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={PRIMARY}
+                  style={{ marginTop: 14 }}
+                />
+              ) : (
+                savedNotes.length > 0 && (
+                  <View style={styles.savedBox}>
+                    {savedNotes.map((item, index) => (
+                      <View key={item.id} style={styles.savedItem}>
+                        <Text style={styles.savedNote}>
+                          {index + 1}. {item.text}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )
               )}
             </View>
           </View>
@@ -384,32 +727,6 @@ export default function LessonVideoScreen() {
             <Text style={styles.footerText}>© 2026 Thoresen e-Learning</Text>
           </View>
         </KeyboardAwareScrollView>
-
-        <Modal
-          visible={menuVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setMenuVisible(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setMenuVisible(false)}
-          >
-            <View style={styles.menuBox}>
-              {menuList.map(item => (
-                <TouchableOpacity
-                  key={item}
-                  style={styles.menuItem}
-                  onPress={() => handleMenuPress(item)}
-                >
-                  <Text style={styles.menuText}>{item}</Text>
-                  <Ionicons name="chevron-forward" size={18} color={PRIMARY} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </TouchableOpacity>
-        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -417,28 +734,10 @@ export default function LessonVideoScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
-  root: { flex: 1, backgroundColor: BG },
-  scrollContent: { paddingBottom: 1 },
 
-  topHeader: {
-    height: 78,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  logo: { width: 170, height: 52 },
-  menuBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: PRIMARY,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  root: { flex: 1, backgroundColor: BG },
+
+  scrollContent: { paddingBottom: 1 },
 
   pageBox: { paddingHorizontal: 16 },
 
@@ -452,6 +751,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   backText: {
     color: '#fff',
     fontSize: 11,
@@ -467,6 +767,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   heroIcon: {
     width: 58,
     height: 58,
@@ -476,18 +777,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 14,
   },
+
   heroSmall: {
     color: '#BFD0FF',
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
   },
+
   heroTitle: {
     color: '#fff',
     fontSize: 21,
     fontWeight: '900',
     marginTop: 3,
   },
+
   heroSub: {
     color: '#DCEBFF',
     fontSize: 12,
@@ -495,11 +799,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 17,
   },
+
   heroBottom: {
     flexDirection: 'row',
     marginTop: 12,
     gap: 8,
   },
+
   heroBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -508,6 +814,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 30,
   },
+
   heroBadgeText: {
     color: '#fff',
     fontSize: 10,
@@ -524,17 +831,21 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     elevation: 5,
   },
+
   video: {
     width: '100%',
     height: 225,
     backgroundColor: '#000',
   },
+
   videoInfo: { padding: 15 },
+
   videoTitle: {
     fontSize: 17,
     fontWeight: '900',
     color: PRIMARY,
   },
+
   videoDesc: {
     marginTop: 5,
     color: MUTED,
@@ -552,9 +863,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   completeBtnDone: {
     backgroundColor: '#22C55E',
   },
+
   completeBtnText: {
     color: '#fff',
     fontSize: 14,
@@ -567,6 +880,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     gap: 10,
   },
+
   infoBox: {
     flex: 1,
     minHeight: 88,
@@ -577,12 +891,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   infoLabel: {
     color: MUTED,
     fontSize: 11,
     fontWeight: '700',
     marginTop: 5,
   },
+
   infoValue: {
     color: TEXT,
     fontSize: 14,
@@ -598,6 +914,7 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     backgroundColor: '#fff',
   },
+
   cardHeader: {
     height: 46,
     backgroundColor: BLUE,
@@ -605,6 +922,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   cardHeaderText: {
     color: '#fff',
     fontSize: 15,
@@ -620,6 +938,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
   },
+
   lessonRowActive: {
     minHeight: 56,
     paddingHorizontal: 14,
@@ -629,6 +948,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
   },
+
   lessonCircle: {
     width: 28,
     height: 28,
@@ -640,6 +960,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
+
   lessonCircleDone: {
     width: 28,
     height: 28,
@@ -649,6 +970,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
+
   lessonCircleActive: {
     width: 28,
     height: 28,
@@ -658,23 +980,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
+
   lessonText: {
     flex: 1,
     color: TEXT,
     fontSize: 12,
     fontWeight: '800',
   },
+
   lessonTextActive: {
     flex: 1,
     color: PRIMARY,
     fontSize: 12,
     fontWeight: '900',
   },
+
   lessonStatus: {
     color: BLUE,
     fontSize: 10,
     fontWeight: '800',
   },
+
   lessonStatusActive: {
     color: RED,
     fontSize: 10,
@@ -689,14 +1015,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   examBtnDisabled: {
     backgroundColor: '#E5E7EB',
   },
+
   examBtnText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '900',
   },
+
   examBtnTextDisabled: {
     color: '#9CA3AF',
   },
@@ -710,11 +1039,13 @@ const styles = StyleSheet.create({
     padding: 14,
     backgroundColor: '#fff',
   },
+
   noteHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
   },
+
   noteIcon: {
     width: 38,
     height: 38,
@@ -724,21 +1055,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
+
   noteTitle: {
     color: PRIMARY,
     fontSize: 16,
     fontWeight: '900',
   },
+
   noteSub: {
     color: MUTED,
     fontSize: 10,
     marginTop: 2,
   },
+
   counter: {
     color: MUTED,
     fontSize: 10,
     fontWeight: '700',
   },
+
   noteInput: {
     minHeight: 115,
     borderWidth: 1,
@@ -749,6 +1084,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     backgroundColor: '#FAFAFA',
   },
+
   noteBtn: {
     height: 44,
     backgroundColor: RED,
@@ -759,12 +1095,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
+
   noteBtnText: {
     color: '#fff',
     fontSize: 13,
     fontWeight: '900',
   },
+
   savedBox: { marginTop: 14 },
+
   savedItem: {
     backgroundColor: SOFT_BLUE,
     borderRadius: 12,
@@ -773,6 +1112,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: PRIMARY,
   },
+
   savedNote: {
     color: TEXT,
     fontSize: 12,
@@ -788,36 +1128,59 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 10,
     borderTopRightRadius: 10,
   },
+
   footerText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '700',
   },
 
-  modalOverlay: {
+  // [ADD] style ใหม่สำหรับสถานะ loading / error / ไม่มีวิดีโอ
+  center: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'flex-end',
-    paddingTop: 80,
-    paddingRight: 18,
-  },
-  menuBox: {
-    width: 230,
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    paddingVertical: 8,
-    elevation: 8,
-  },
-  menuItem: {
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  menuText: {
-    fontSize: 15,
-    color: PRIMARY,
+
+  loadingText: {
+    marginTop: 12,
+    color: MUTED,
+    fontSize: 13,
     fontWeight: '700',
   },
+
+  errorText: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+
+  retryButton: {
+    backgroundColor: PRIMARY,
+    borderRadius: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+  },
+
+  retryText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  noVideo: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  noVideoText: {
+    marginTop: 8,
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
 });

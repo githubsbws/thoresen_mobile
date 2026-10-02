@@ -6,6 +6,17 @@ import { AuthService } from './auth.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { JwtStrategy } from './jwt.strategy';
 
+/**
+ * [FIX] เพิ่ม `exports: [JwtModule]` บรรทัดเดียว (ไฟล์เดิมของคุณไม่มีบรรทัดนี้)
+ *
+ * เหตุผล: JwtAuthGuard (ของจริง) inject JwtService เข้ามาใช้ ทุก module ที่อยากใช้ guard ตัวนี้
+ * (เช่น CourseModule) ต้องมองเห็น JwtService ผ่าน DI ด้วย การ export JwtModule ออกจาก AuthModule
+ * แล้วให้ module อื่น `imports: [AuthModule]` คือวิธีมาตรฐานของ NestJS ในการแชร์ provider ข้าม
+ * module โดยไม่ต้อง register JwtModule.registerAsync(...) ซ้ำที่อื่นอีกรอบ (ซึ่งจะต้องคัดลอก
+ * config เดิมไปซ้ำ เสี่ยงหลุด sync กันทีหลัง)
+ *
+ * ไม่มีผลกับพฤติกรรมเดิมของ AuthModule เอง (/auth/login, /auth/me ยังทำงานเหมือนเดิมทุกอย่าง)
+ */
 @Module({
   imports: [
     ConfigModule,
@@ -24,6 +35,7 @@ import { JwtStrategy } from './jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService,JwtStrategy,],
+  providers: [AuthService, JwtStrategy],
+  exports: [JwtModule], // [ADD]
 })
 export class AuthModule {}

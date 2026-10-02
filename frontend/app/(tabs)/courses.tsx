@@ -1,3 +1,16 @@
+/**
+ * ============================================================
+ * app/(tabs)/courses.tsx  —  หน้า Course (แท็บ)
+ * ============================================================
+ * สรุปสิ่งที่แก้ (ค้นหา [FIX] / [ADD] / [REMOVE])
+ * [FIX]  แท็บ My Course / Completed: เดิมไม่เคย setMyCourses/setCompletedCourses จึงว่างตลอด
+ * [FIX]  loading เริ่มเป็น true และปิดเมื่อไม่มี userId (เดิมหมุนค้าง/หน้าว่างวาบ)
+ * [FIX]  activeTab เป็น union type แทน string
+ * [FIX]  ใช้ formatDate ร่วมกัน (เดิม th-TH ปี พ.ศ. ซึ่งบาง Android ไม่รองรับ locale)
+ * [FIX]  handleMyCoursePress ใส่ `as any` ให้เหมือนที่อื่น
+ * [FIX]  วันที่ในการ์ด: ใช้ startDate ถ้าไม่มีใช้ courseDateStart
+ * [REMOVE] CourseCard / CourseCardProps ที่ไม่ได้ถูกเรียกใช้
+ */
 import React, {
   useCallback,
   useMemo,
@@ -38,6 +51,7 @@ import {
 
 import AppHeader from '../../src/components/AppHeader';
 import { useAuth } from '../../src/context/AuthContext';
+import { formatDate } from '../../src/utils/formatDate'; // [ADD]
 
 
 // =====================================================
@@ -70,8 +84,9 @@ export default function CourseScreen() {
   const [menuVisible, setMenuVisible] =
     useState(false);
 
+  // [FIX] union type แทน string
   const [activeTab, setActiveTab] =
-    useState('Course');
+    useState<'Course' | 'My Course' | 'Completed'>('Course');
 
   const [searchText, setSearchText] =
     useState('');
@@ -84,8 +99,9 @@ export default function CourseScreen() {
   const [completedCourses, setCompletedCourses] =
     useState<Course[]>([]);
 
+  // [FIX] เริ่มเป็น true ไม่ให้เห็นหน้าว่างก่อนโหลด
   const [loading, setLoading] =
-    useState(false);
+    useState(true);
 
 
   // ---------------------------------------------------
@@ -105,18 +121,16 @@ export default function CourseScreen() {
 
   const loadCourses = useCallback(async () => {
   if (!userId) {
+    // [FIX] เดิม return เฉยๆ
+    setLoading(false);
     return;
   }
 
   try {
     setLoading(true);
 
-    console.log('LOAD COURSE CATEGORIES');
-    console.log('userId:', userId);
-
+    // [REMOVE] console.log ที่ log ทั้ง response
     const response = await getCourses(userId);
-
-    console.log('COURSE RESPONSE:', response);
 
     if (!response?.success) {
       throw new Error(
@@ -127,6 +141,15 @@ export default function CourseScreen() {
 
     setCategories(
       response?.data?.categories || [],
+    );
+
+    // [FIX] เดิมไม่เคย set สองตัวนี้ -> แท็บ My Course / Completed ว่างตลอด
+    setMyCourses(
+      response?.data?.myCourses || [],
+    );
+
+    setCompletedCourses(
+      response?.data?.completedCourses || [],
     );
   } catch (error: any) {
     console.error(
@@ -249,41 +272,7 @@ export default function CourseScreen() {
   ]);
 
 
-  // ===================================================
-  // Date Formatter
-  // ===================================================
-
-  const formatDate = (
-    date?: string | null,
-  ) => {
-
-    if (!date) {
-      return '-';
-    }
-
-
-    const parsedDate =
-      new Date(date);
-
-
-    if (
-      Number.isNaN(
-        parsedDate.getTime(),
-      )
-    ) {
-      return '-';
-    }
-
-
-    return parsedDate.toLocaleDateString(
-      'th-TH',
-      {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      },
-    );
-  };
+  // [REMOVE] formatDate ในไฟล์นี้ -> ใช้ src/utils/formatDate.ts แทน
 
 
   // ===================================================
@@ -304,7 +293,7 @@ export default function CourseScreen() {
   ) => {
 
     router.push(
-      `/course/${course.id}`,
+      `/course/${course.id}` as any, // [FIX] as any ให้เหมือนที่อื่น
     );
   };
 
@@ -852,14 +841,6 @@ export default function CourseScreen() {
 }
 
 
-// =====================================================
-// Course Card
-// =====================================================
-
-interface CourseCardProps {
-  course: Course;
-  onPress: () => void;
-}
 interface CategoryCardProps {
   category: CourseCategory;
   onPress: () => void;
@@ -944,118 +925,7 @@ function CategoryCard({
     </TouchableOpacity>
   );
 }
-function CourseCard({
-  course,
-  onPress,
-}: CourseCardProps) {
-
-  return (
-
-    <TouchableOpacity
-      style={styles.courseCard}
-      activeOpacity={0.85}
-      onPress={onPress}
-    >
-
-      {/* Image */}
-
-      {course.image ? (
-
-        <Image
-          source={{
-            uri: course.image,
-          }}
-          style={styles.courseImage}
-          resizeMode="cover"
-        />
-
-      ) : (
-
-        <View
-          style={[
-            styles.courseImage,
-            styles.imagePlaceholder,
-          ]}
-        >
-
-          <Ionicons
-            name="book-outline"
-            size={40}
-            color={PRIMARY}
-          />
-
-        </View>
-
-      )}
-
-
-      {/* Content */}
-
-      <View
-        style={styles.courseContent}
-      >
-
-        <Text
-          style={styles.courseTitle}
-          numberOfLines={2}
-        >
-          {course.title ||
-            course.shortTitle ||
-            'ไม่มีชื่อหลักสูตร'}
-        </Text>
-
-
-        {course.courseNumber && (
-
-          <Text
-            style={
-              styles.courseNumber
-            }
-          >
-            {course.courseNumber}
-          </Text>
-
-        )}
-
-
-        <View
-          style={styles.courseMeta}
-        >
-
-          <Ionicons
-            name="book-outline"
-            size={15}
-            color={MUTED}
-          />
-
-          <Text
-            style={styles.courseMetaText}
-          >
-            {course.lessonCount ?? 0}{' '}
-            บทเรียน
-          </Text>
-
-        </View>
-
-
-        {/* Status */}
-
-        <View
-          style={styles.statusRow}
-        >
-
-          <StatusBadge
-            status={course.status}
-          />
-
-        </View>
-
-      </View>
-
-    </TouchableOpacity>
-
-  );
-}
+// [REMOVE] function CourseCard (ไม่มีที่เรียกใช้)
 
 
 // =====================================================
@@ -1090,6 +960,10 @@ function MyCourseCard({
       'completed' ||
     course.passed === true ||
     progress >= 100;
+
+  // [FIX] backend ไม่ส่ง startDate จึงใช้ courseDateStart แทน
+  const startDate =
+    course.startDate ?? course.courseDateStart;
 
 
   return (
@@ -1230,7 +1104,7 @@ function MyCourseCard({
           </View>
 
 
-          {course.startDate && (
+          {startDate && (
 
             <View
               style={styles.infoItem}
@@ -1246,7 +1120,7 @@ function MyCourseCard({
                 style={styles.infoText}
               >
                 {formatDate(
-                  course.startDate,
+                  startDate,
                 )}
               </Text>
 

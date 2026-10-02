@@ -1,3 +1,21 @@
+/**
+ * ============================================================
+ * app/course-category/[id].tsx  —  รายการหลักสูตรในหมวดหมู่
+ * (อย่าสับสนกับ app/course/[id].tsx และ app/lesson/[id].tsx ที่ชื่อไฟล์เหมือนกัน)
+ * ============================================================
+ * สรุปสิ่งที่แก้ (ค้นหา [FIX] / [ADD] / [REMOVE])
+ * [FIX]  loading เริ่มเป็น true และปิดเมื่อไม่มี userId (เดิมกระพริบ "ยังไม่มีหลักสูตร" ก่อนโหลด)
+ * [FIX]  chip หมวดหมู่ดึงจาก API (data.categories) และเทียบ active ด้วย id
+ *        เดิม hard-code ชื่อ/เลขหมวดไว้ และเทียบ `chip === category.title` ซึ่งแทบไม่เคยตรง
+ *        (และมี "05 - Technical" กับ "08 - Technical" ซ้ำ)
+ * [FIX]  สลับ chip ใช้ router.replace (เดิม push ทำให้ stack สะสมทุกครั้งที่กด)
+ * [FIX]  การ์ด: ผู้สอน/ผู้ช่วย/ช่วงเวลา มาจากข้อมูลจริง (เดิม "-" ตายตัว และ "30 Day" hard-code)
+ * [FIX]  ใช้ formatDate ร่วมกัน (src/utils/formatDate.ts)
+ * [FIX]  ปุ่มค้นหาปิดคีย์บอร์ด (เดิมกดแล้วไม่ทำอะไร) การค้นหาทำงานทันทีตอนพิมพ์อยู่แล้ว
+ * [FIX]  dropdown "Course" ใช้งานได้จริงแล้ว เป็นตัวกรองสถานะการเรียน (ทั้งหมด/ยังไม่เริ่ม/
+ *        กำลังเรียน/เรียนจบแล้ว) เดิมเป็นปุ่มเปล่า กดแล้วไม่ทำอะไรเลย
+ * [REMOVE] โค้ดเมนูที่ไม่มีที่เรียกเปิด, style ที่ไม่ได้ใช้
+ */
 import React, {
   useCallback,
   useMemo,
@@ -7,14 +25,15 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  View,
-  Text,
-  ScrollView,
   Image,
-  TouchableOpacity,
-  StyleSheet,
-  TextInput,
+  Keyboard,
   Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,6 +53,7 @@ import {
 } from '../../src/services/course';
 
 import { useAuth } from '../../src/context/AuthContext';
+import { formatDate } from '../../src/utils/formatDate';
 
 const PRIMARY = '#001B74';
 const RED = '#E30613';
@@ -46,167 +66,70 @@ const MUTED = '#6B7280';
 const BORDER = '#E5E7EB';
 const BG = '#F4F6FA';
 
-const commonChips = [
-  'All Courses',
-  '01 - Management',
-  '02 - Cargo Care',
-  '03 - Maritime Labour',
-  '04 - Navigation',
-  '05 - Technical',
-  '06 - Quality and Safety',
-  '07 - Other Course',
-  '08 - Technical',
-];
+type CategoryChip = { id: number; title?: string | null };
 
-const chipRoute: Record<string, string> = {
-  '01 - Management': '1',
-  '02 - Cargo Care': '2',
-  '03 - Maritime Labour': '3',
-  '04 - Navigation': '4',
-  '05 - Technical': '5',
-  '06 - Quality and Safety': '6',
-  '07 - Other Course': '7',
-  '08 - Technical': '8',
-};
+// [ADD] ตัวเลือกของ dropdown "Course"
+type StatusFilter = 'all' | 'not_started' | 'in_progress' | 'completed';
 
-const menuList = [
-  'Home',
-  'About Us',
-  'Course',
-  'How to Use',
-  'FAQ',
-  'Contact Us',
-  'Mess-room',
-  'Library',
-  'Terms & Conditions',
-  'Report',
+const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'ทั้งหมด' },
+  { value: 'not_started', label: 'ยังไม่เริ่มเรียน' },
+  { value: 'in_progress', label: 'กำลังเรียน' },
+  { value: 'completed', label: 'เรียนจบแล้ว' },
 ];
 
 export default function CourseCategoryScreen() {
-  const { id } =
-    useLocalSearchParams<{ id: string }>();
-
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
 
-  const userId = user?.id
-    ? Number(user.id)
-    : null;
-
+  const userId = user?.id ? Number(user.id) : null;
   const categoryId = Number(id);
 
-  const [menuVisible, setMenuVisible] =
-    useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [category, setCategory] = useState<CourseCategory | null>(null);
+  const [categories, setCategories] = useState<CategoryChip[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
 
-  const [searchText, setSearchText] =
-    useState('');
-
-  const [category, setCategory] =
-    useState<CourseCategory | null>(null);
-
-  const [courses, setCourses] =
-    useState<Course[]>([]);
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const handleMenuPress = (item: string) => {
-    setMenuVisible(false);
-
-    if (item === 'Home') {
-      router.push('/(tabs)/Home' as any);
-    }
-
-    if (item === 'About Us') {
-      router.push('/(tabs)/about' as any);
-    }
-
-    if (item === 'Course') {
-      router.push('/(tabs)/courses' as any);
-    }
-
-    if (item === 'Library') {
-      router.push('/(tabs)/library' as any);
-    }
-
-    if (item === 'Report') {
-      router.push('/(tabs)/report' as any);
-    }
-
-    if (item === 'How to Use') {
-      router.push('/(tabs)/how-to-use' as any);
-    }
-
-    if (item === 'FAQ') {
-      router.push('/(tabs)/faq' as any);
-    }
-
-    if (item === 'Terms & Conditions') {
-      router.push('/(tabs)/terms' as any);
-    }
-  };
+  // [FIX] เริ่มเป็น true ไม่ให้กระพริบหน้าว่างก่อนโหลด
+  const [loading, setLoading] = useState(true);
 
   const loadCourses = useCallback(async () => {
-    if (
-      !userId ||
-      !categoryId ||
-      Number.isNaN(categoryId)
-    ) {
+    if (!userId || !categoryId || Number.isNaN(categoryId)) {
+      // [FIX] เดิม return เฉยๆ
+      setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
 
-      console.log(
-        'LOAD CATEGORY COURSES',
-      );
-      console.log(
-        'categoryId:',
-        categoryId,
-      );
-      console.log(
-        'userId:',
-        userId,
-      );
-
-      const response =
-        await getCoursesByCategory(
-          categoryId,
-          userId,
-          1,
-        );
-
-      console.log(
-        'CATEGORY COURSE RESPONSE:',
-        response,
-      );
+      // [FIX] เลิกส่ง userId แล้ว (backend อ่านจาก token)
+      const response = await getCoursesByCategory(categoryId, 1);
 
       if (!response?.success) {
-        throw new Error(
-          response?.message ||
-            'ไม่สามารถโหลดหลักสูตรได้',
+        throw new Error(response?.message || 'ไม่สามารถโหลดหลักสูตรได้');
+      }
+
+      setCategory(response.data?.category ?? null);
+      setCategories(response.data?.categories ?? []);
+      setCourses(response.data?.courses ?? []);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.error(
+          'Load category courses error:',
+          error?.response?.data || error?.message || error,
         );
       }
 
-      setCategory(
-        response?.data?.category ?? null,
-      );
-
-      setCourses(
-        response?.data?.courses ?? [],
-      );
-    } catch (error: any) {
-      console.error(
-        'Load category courses error:',
-        error?.response?.data ||
-          error?.message ||
-          error,
-      );
-
+      // backend คืน 404 เมื่อไม่พบหมวดหมู่
       Alert.alert(
         'เกิดข้อผิดพลาด',
-        'ไม่สามารถโหลดหลักสูตรได้',
+        error?.response?.status === 404
+          ? 'ไม่พบหมวดหมู่นี้'
+          : 'ไม่สามารถโหลดหลักสูตรได้',
       );
+
+      setCourses([]);
     } finally {
       setLoading(false);
     }
@@ -218,144 +141,142 @@ export default function CourseCategoryScreen() {
     }, [loadCourses]),
   );
 
-  const filteredCourses = useMemo(() => {
-    const keyword =
-      searchText.trim().toLowerCase();
+  // [ADD] dropdown "Course" = ตัวกรองสถานะการเรียน (เดิมปุ่มนี้กดแล้วไม่ทำอะไรเลย)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [filterMenuVisible, setFilterMenuVisible] = useState(false);
 
-    if (!keyword) {
-      return courses;
+  const filteredCourses = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+
+    const byKeyword = !keyword
+      ? courses
+      : courses.filter((item) => {
+          const title = item.title?.toLowerCase() ?? '';
+          const shortTitle = item.shortTitle?.toLowerCase() ?? '';
+          const courseNumber = item.courseNumber?.toLowerCase() ?? '';
+
+          return (
+            title.includes(keyword) ||
+            shortTitle.includes(keyword) ||
+            courseNumber.includes(keyword)
+          );
+        });
+
+    if (statusFilter === 'all') {
+      return byKeyword;
     }
 
-    return courses.filter((item) => {
-      const title =
-        item.title?.toLowerCase() ?? '';
+    // [ADD] ใช้ตรรกะเดียวกับที่ CourseCard ใช้ตัดสิน isCompleted/progress ด้านล่าง
+    // เพื่อให้ตัวกรองตรงกับป้ายสถานะที่เห็นในการ์ดจริง
+    return byKeyword.filter((item) => {
+      const isCompleted = item.status === 'completed' || item.passed === true;
+      const progress = Math.min(100, Math.max(0, Number(item.progress ?? 0)));
 
-      const shortTitle =
-        item.shortTitle?.toLowerCase() ?? '';
+      if (statusFilter === 'completed') {
+        return isCompleted;
+      }
 
-      const courseNumber =
-        item.courseNumber?.toLowerCase() ?? '';
+      if (statusFilter === 'in_progress') {
+        return !isCompleted && progress > 0;
+      }
 
-      return (
-        title.includes(keyword) ||
-        shortTitle.includes(keyword) ||
-        courseNumber.includes(keyword)
-      );
+      return !isCompleted && progress === 0; // not_started
     });
-  }, [courses, searchText]);
+  }, [courses, searchText, statusFilter]);
+
+  const handleChipPress = (chipId: number) => {
+    if (chipId === categoryId) {
+      return;
+    }
+
+    // [FIX] replace แทน push เพื่อไม่ให้ stack หน้าเดิมซ้อนกันหลายชั้น
+    router.replace(`/course-category/${chipId}` as any);
+  };
 
   return (
-    <SafeAreaView
-      style={styles.safe}
-      edges={['top']}
-    >
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.root}>
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={
-            styles.scrollContent
-          }
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
         >
           <AppHeader />
 
           <View style={styles.pageBox}>
             <View style={styles.titleRow}>
               <Text style={styles.pageTitle}>
-                {category?.title ||
-                  'Course'}
+                {category?.title || 'Course'}
               </Text>
             </View>
 
             <View style={styles.searchLabelRow}>
-              <Text style={styles.searchLabel}>
-                Search
-              </Text>
+              <Text style={styles.searchLabel}>Search</Text>
 
-              <View
-                style={styles.searchInputWrap}
-              >
+              <View style={styles.searchInputWrap}>
                 <TextInput
                   placeholder="search"
                   placeholderTextColor="#9CA3AF"
                   value={searchText}
                   onChangeText={setSearchText}
                   style={styles.searchInput}
+                  returnKeyType="search"
+                  onSubmitEditing={Keyboard.dismiss}
                 />
 
+                {/* [FIX] ค้นหาทำงานตอนพิมพ์อยู่แล้ว ปุ่มนี้ปิดคีย์บอร์ด */}
                 <TouchableOpacity
                   style={styles.searchBtn}
+                  onPress={Keyboard.dismiss}
                 >
-                  <Ionicons
-                    name="search"
-                    size={14}
-                    color="#fff"
-                  />
+                  <Ionicons name="search" size={14} color="#fff" />
                 </TouchableOpacity>
               </View>
 
+              {/* [FIX] dropdown กรองสถานะการเรียน ใช้งานได้จริงแล้ว */}
               <TouchableOpacity
                 style={styles.selectBox}
                 activeOpacity={0.8}
+                onPress={() => setFilterMenuVisible(true)}
               >
-                <Text style={styles.selectText}>
-                  Course
+                <Text style={styles.selectText} numberOfLines={1}>
+                  {
+                    STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter)
+                      ?.label
+                  }
                 </Text>
-
-                <Ionicons
-                  name="chevron-down"
-                  size={14}
-                  color={PRIMARY}
-                />
+                <Ionicons name="chevron-down" size={14} color={PRIMARY} />
               </TouchableOpacity>
             </View>
 
+            {/* [FIX] chip มาจาก API */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.chipScroll}
             >
-              {commonChips.map((chip) => {
-                const active =
-                  chip === category?.title;
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => router.push('/(tabs)/courses' as any)}
+                style={styles.chip}
+              >
+                <Text style={styles.chipText}>All Courses</Text>
+              </TouchableOpacity>
+
+              {categories.map((chip) => {
+                const active = chip.id === categoryId;
 
                 return (
                   <TouchableOpacity
-                    key={chip}
+                    key={chip.id}
                     activeOpacity={0.8}
-                    onPress={() => {
-                      if (
-                        chip ===
-                        'All Courses'
-                      ) {
-                        router.push(
-                          '/(tabs)/courses' as any,
-                        );
-                        return;
-                      }
-
-                      const route =
-                        chipRoute[chip];
-
-                      if (route) {
-                        router.push(
-                          `/course-category/${route}` as any,
-                        );
-                      }
-                    }}
-                    style={[
-                      styles.chip,
-                      active &&
-                        styles.chipActive,
-                    ]}
+                    onPress={() => handleChipPress(chip.id)}
+                    style={[styles.chip, active && styles.chipActive]}
                   >
                     <Text
-                      style={[
-                        styles.chipText,
-                        active &&
-                          styles.chipTextActive,
-                      ]}
+                      style={[styles.chipText, active && styles.chipTextActive]}
                     >
-                      {chip}
+                      {chip.title}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -363,107 +284,84 @@ export default function CourseCategoryScreen() {
             </ScrollView>
 
             <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>
-                Course
-              </Text>
-
+              <Text style={styles.sectionTitle}>Course</Text>
               <View style={styles.redDot} />
             </View>
 
             {loading ? (
-              <View
-                style={styles.loadingContainer}
-              >
-                <ActivityIndicator
-                  size="large"
-                  color={PRIMARY}
-                />
-
-                <Text
-                  style={styles.loadingText}
-                >
-                  กำลังโหลดหลักสูตร...
-                </Text>
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={PRIMARY} />
+                <Text style={styles.loadingText}>กำลังโหลดหลักสูตร...</Text>
               </View>
-            ) : filteredCourses.length ===
-              0 ? (
-              <View
-                style={styles.emptyContainer}
-              >
-                <Ionicons
-                  name="book-outline"
-                  size={48}
-                  color="#9CA3AF"
-                />
-
-                <Text
-                  style={styles.emptyText}
-                >
+            ) : filteredCourses.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="book-outline" size={48} color="#9CA3AF" />
+                <Text style={styles.emptyText}>
                   {searchText
                     ? 'ไม่พบหลักสูตรที่ค้นหา'
                     : 'ยังไม่มีหลักสูตรในหมวดหมู่นี้'}
                 </Text>
               </View>
             ) : (
-              <View
-                style={styles.courseList}
-              >
-                {filteredCourses.map(
-                  (item) => (
-                    <CourseCard
-                      key={item.id}
-                      item={item}
-                    />
-                  ),
-                )}
+              <View style={styles.courseList}>
+                {filteredCourses.map((item) => (
+                  <CourseCard key={item.id} item={item} />
+                ))}
               </View>
             )}
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              ©2026 Thoresen e-learning
-            </Text>
+            <Text style={styles.footerText}>©2026 Thoresen e-learning</Text>
           </View>
         </ScrollView>
 
+        {/* [ADD] Modal เลือกตัวกรองสถานะ ใช้คู่กับปุ่ม dropdown "Course" ด้านบน */}
         <Modal
-          visible={menuVisible}
+          visible={filterMenuVisible}
           transparent
           animationType="fade"
-          onRequestClose={() =>
-            setMenuVisible(false)
-          }
+          onRequestClose={() => setFilterMenuVisible(false)}
         >
           <TouchableOpacity
-            style={styles.modalOverlay}
+            style={styles.filterModalOverlay}
             activeOpacity={1}
-            onPress={() =>
-              setMenuVisible(false)
-            }
+            onPress={() => setFilterMenuVisible(false)}
           >
-            <View style={styles.menuBox}>
-              {menuList.map((item) => (
-                <TouchableOpacity
-                  key={item}
-                  style={styles.menuItem}
-                  onPress={() =>
-                    handleMenuPress(item)
-                  }
-                >
-                  <Text
-                    style={styles.menuText}
-                  >
-                    {item}
-                  </Text>
+            <View style={styles.filterModalBox}>
+              <Text style={styles.filterModalTitle}>กรองตามสถานะ</Text>
 
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color={PRIMARY}
-                  />
-                </TouchableOpacity>
-              ))}
+              {STATUS_FILTER_OPTIONS.map((option) => {
+                const active = option.value === statusFilter;
+
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={styles.filterOptionRow}
+                    onPress={() => {
+                      setStatusFilter(option.value);
+                      setFilterMenuVisible(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.filterOptionText,
+                        active && styles.filterOptionTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+
+                    {active && (
+                      <Ionicons
+                        name="checkmark"
+                        size={18}
+                        color={PRIMARY}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </TouchableOpacity>
         </Modal>
@@ -472,53 +370,42 @@ export default function CourseCategoryScreen() {
   );
 }
 
-function CourseCard({
-  item,
-}: {
-  item: Course;
-}) {
-  const isCompleted =
-    item.status === 'completed' ||
-    item.passed === true;
+function CourseCard({ item }: { item: Course }) {
+  const isCompleted = item.status === 'completed' || item.passed === true;
 
-  const progress =
-    Number(item.progress ?? 0);
+  // [FIX] กัน progress เกิน 0-100
+  const progress = Math.min(100, Math.max(0, Number(item.progress ?? 0)));
 
-  const statusColor =
-    isCompleted
-      ? GREEN
-      : progress > 0
-        ? ORANGE
-        : '#9CA3AF';
+  const statusColor = isCompleted
+    ? GREEN
+    : progress > 0
+      ? ORANGE
+      : '#9CA3AF';
 
-  const statusText =
-    isCompleted
-      ? 'Completed'
-      : progress > 0
-        ? 'In Progress'
-        : 'Not Started';
+  const statusText = isCompleted
+    ? 'Completed'
+    : progress > 0
+      ? 'In Progress'
+      : 'Not Started';
+
+  // [FIX] ไม่ใส่ "30 Day" เองเมื่อไม่มีข้อมูล (เดิม fallback เป็น 30 ตายตัว)
+  const periodText =
+    item.courseDateStart && item.courseDateEnd
+      ? `Period ${item.courseDayLearn ? `${item.courseDayLearn} Day ` : ''}( ${formatDate(
+          item.courseDateStart,
+        )} - ${formatDate(item.courseDateEnd)} )`
+      : 'Course Period';
+
+  const openCourse = () => router.push(`/course/${item.id}` as any);
 
   return (
     <TouchableOpacity
       style={styles.card}
       activeOpacity={0.9}
-      onPress={() =>
-        router.push(
-          `/course/${item.id}` as any,
-        )
-      }
+      onPress={openCourse}
     >
       <View style={styles.periodBox}>
-        <Text style={styles.periodText}>
-          {item.courseDateStart &&
-          item.courseDateEnd
-            ? `Period ${item.courseDayLearn ?? 30} Day ( ${formatDate(
-                item.courseDateStart,
-              )} - ${formatDate(
-                item.courseDateEnd,
-              )} )`
-            : 'Course Period'}
-        </Text>
+        <Text style={styles.periodText}>{periodText}</Text>
       </View>
 
       {item.image ? (
@@ -528,67 +415,32 @@ function CourseCard({
           resizeMode="cover"
         />
       ) : (
-        <View
-          style={[
-            styles.cardImage,
-            styles.imagePlaceholder,
-          ]}
-        >
-          <Ionicons
-            name="book-outline"
-            size={50}
-            color="#9CA3AF"
-          />
+        <View style={[styles.cardImage, styles.imagePlaceholder]}>
+          <Ionicons name="book-outline" size={50} color="#9CA3AF" />
         </View>
       )}
 
       <View style={styles.cardBody}>
-        <View
-          style={styles.courseTitleRow}
-        >
-          <Text
-            numberOfLines={2}
-            style={styles.cardTitle}
-          >
-            {item.title ||
-              'ไม่มีชื่อหลักสูตร'}
+        <View style={styles.courseTitleRow}>
+          <Text numberOfLines={2} style={styles.cardTitle}>
+            {item.title || 'ไม่มีชื่อหลักสูตร'}
           </Text>
 
-          <View
-            style={[
-              styles.statusBadge,
-              {
-                backgroundColor:
-                  statusColor,
-              },
-            ]}
-          >
-            <Text
-              style={styles.statusText}
-            >
-              {statusText}
-            </Text>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+            <Text style={styles.statusText}>{statusText}</Text>
           </View>
         </View>
 
-        <View
-          style={styles.progressTrack}
-        >
+        <View style={styles.progressTrack}>
           <View
             style={[
               styles.progressFill,
-              {
-                width: `${progress}%`,
-                backgroundColor:
-                  statusColor,
-              },
+              { width: `${progress}%`, backgroundColor: statusColor },
             ]}
           />
         </View>
 
-        <Text
-          style={styles.progressText}
-        >
+        <Text style={styles.progressText}>
           {progress} %{' '}
           {isCompleted
             ? 'เรียนสมบูรณ์'
@@ -599,138 +451,54 @@ function CourseCard({
 
         <View style={styles.teacherBox}>
           <View style={styles.teacherRow}>
-            <Text
-              style={styles.teacherLabel}
-            >
-              คำสอนหลักสูตร :
-            </Text>
-
-            <Text
-              style={styles.teacherValue}
-            >
-              -
-            </Text>
+            <Text style={styles.teacherLabel}>คำสอนหลักสูตร :</Text>
+            <Text style={styles.teacherValue}>{item.teacher ?? '-'}</Text>
           </View>
 
           <View style={styles.teacherRow}>
-            <Text
-              style={styles.teacherLabel}
-            >
-              ผู้ปฏิบัติหลักสูตร :
-            </Text>
-
-            <Text
-              style={styles.teacherValue}
-            >
-              -
-            </Text>
+            <Text style={styles.teacherLabel}>ผู้ปฏิบัติหลักสูตร :</Text>
+            <Text style={styles.teacherValue}>{item.assistant ?? '-'}</Text>
           </View>
         </View>
 
         <View style={styles.infoGrid}>
           <View style={styles.infoCell}>
-            <Text
-              style={styles.infoLabel}
-            >
-              ระยะเวลา
-            </Text>
-
-            <Ionicons
-              name="time-outline"
-              size={22}
-              color={BLUE}
-            />
-
-            <Text
-              style={styles.infoValue}
-            >
-              {item.courseDayLearn
-                ? `${item.courseDayLearn} วัน`
-                : '-'}
+            <Text style={styles.infoLabel}>ระยะเวลา</Text>
+            <Ionicons name="time-outline" size={22} color={BLUE} />
+            <Text style={styles.infoValue}>
+              {item.courseDayLearn ? `${item.courseDayLearn} วัน` : '-'}
             </Text>
           </View>
 
           <View style={styles.infoCell}>
-            <Text
-              style={styles.infoLabel}
-            >
-              จำนวนบทเรียน
-            </Text>
-
-            <Ionicons
-              name="book"
-              size={22}
-              color={BLUE}
-            />
-
-            <Text
-              style={styles.infoValue}
-            >
-              {item.lessonCount ?? 0}{' '}
-              บทเรียน
-            </Text>
+            <Text style={styles.infoLabel}>จำนวนบทเรียน</Text>
+            <Ionicons name="book" size={22} color={BLUE} />
+            <Text style={styles.infoValue}>{item.lessonCount ?? 0} บทเรียน</Text>
           </View>
         </View>
 
         <View style={styles.infoGrid}>
           <View style={styles.infoCell}>
-            <Text
-              style={styles.infoLabel}
-            >
-              สถานะ Certificate
-            </Text>
-
+            <Text style={styles.infoLabel}>สถานะ Certificate</Text>
             <Ionicons
-              name={
-                isCompleted
-                  ? 'ribbon'
-                  : 'document-text-outline'
-              }
+              name={isCompleted ? 'ribbon' : 'document-text-outline'}
               size={24}
-              color={
-                isCompleted
-                  ? GREEN
-                  : '#D1D5DB'
-              }
+              color={isCompleted ? GREEN : '#D1D5DB'}
             />
-
             <Text
-              style={
-                isCompleted
-                  ? styles.infoValue
-                  : styles.infoValueMuted
-              }
+              style={isCompleted ? styles.infoValue : styles.infoValueMuted}
             >
-              {isCompleted
-                ? 'รับใบประกาศได้'
-                : 'ยังไม่ผ่านเงื่อนไข'}
+              {isCompleted ? 'รับใบประกาศได้' : 'ยังไม่ผ่านเงื่อนไข'}
             </Text>
           </View>
 
           <View style={styles.infoCell}>
-            <Text
-              style={styles.infoLabel}
-            >
-              แบบประเมินหลักสูตร
-            </Text>
+            <Text style={styles.infoLabel}>แบบประเมินหลักสูตร</Text>
+            <Ionicons name="newspaper-outline" size={24} color={BLUE} />
 
-            <Ionicons
-              name="newspaper-outline"
-              size={24}
-              color={BLUE}
-            />
-
-            <View
-              style={[
-                styles.evaluateBtn,
-                styles.evaluateBtnDisabled,
-              ]}
-            >
-              <Text
-                style={styles.evaluateText}
-              >
-                ทำแบบประเมิน
-              </Text>
+            {/* TODO: ต่อกับสถานะแบบประเมินจริง (ตอนนี้เป็นปุ่มจำลอง disabled เหมือนเดิม) */}
+            <View style={[styles.evaluateBtn, styles.evaluateBtnDisabled]}>
+              <Text style={styles.evaluateText}>ทำแบบประเมิน</Text>
             </View>
           </View>
         </View>
@@ -738,49 +506,14 @@ function CourseCard({
         <TouchableOpacity
           style={styles.summaryBtn}
           activeOpacity={0.85}
-          onPress={() =>
-            router.push(
-              `/course/${item.id}` as any,
-            )
-          }
+          onPress={openCourse}
         >
-          <Text
-            style={styles.summaryText}
-          >
-            Academic summary
-          </Text>
-
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color="#fff"
-          />
+          <Text style={styles.summaryText}>Academic summary</Text>
+          <Ionicons name="chevron-forward" size={18} color="#fff" />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
-}
-
-function formatDate(
-  value: string | Date,
-) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-
-  const day = String(
-    date.getDate(),
-  ).padStart(2, '0');
-
-  const month = String(
-    date.getMonth() + 1,
-  ).padStart(2, '0');
-
-  const year = date.getFullYear();
-
-  return `${day} ${month} ${year}`;
 }
 
 const styles = StyleSheet.create({
@@ -796,10 +529,12 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingBottom: 0,
+    flexGrow: 1,
   },
 
   pageBox: {
     paddingHorizontal: 18,
+    flex: 1,
   },
 
   titleRow: {
@@ -872,6 +607,7 @@ const styles = StyleSheet.create({
 
   chipScroll: {
     marginBottom: 18,
+    flexGrow: 0,
   },
 
   chip: {
@@ -932,6 +668,7 @@ const styles = StyleSheet.create({
   },
 
   emptyContainer: {
+    flex: 1,
     minHeight: 250,
     alignItems: 'center',
     justifyContent: 'center',
@@ -963,7 +700,7 @@ const styles = StyleSheet.create({
     shadowOffset: {
       width: 0,
       height: 5,
-    },
+  }
   },
 
   periodBox: {
@@ -1144,6 +881,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     paddingHorizontal: 18,
+    width: '100%',
   },
 
   footerText: {
@@ -1152,23 +890,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  modalOverlay: {
+  // [ADD] style ของ Modal ตัวกรองสถานะ
+  filterModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'flex-end',
-    paddingTop: 80,
-    paddingRight: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
 
-  menuBox: {
-    width: 230,
+  filterModalBox: {
+    width: '100%',
+    maxWidth: 320,
     backgroundColor: '#fff',
     borderRadius: 18,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     elevation: 8,
   },
 
-  menuItem: {
+  filterModalTitle: {
+    color: PRIMARY,
+    fontSize: 14,
+    fontWeight: '900',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  filterOptionRow: {
     paddingVertical: 13,
     paddingHorizontal: 16,
     flexDirection: 'row',
@@ -1176,9 +925,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  menuText: {
-    fontSize: 15,
-    color: PRIMARY,
-    fontWeight: '700',
+  filterOptionText: {
+    fontSize: 14,
+    color: TEXT,
+    fontWeight: '600',
   },
+
+  filterOptionTextActive: {
+    color: PRIMARY,
+    fontWeight: '900',
+  },
+
 });
