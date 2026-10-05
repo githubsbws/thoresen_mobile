@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, setAuthToken } from './api';
 
 export interface User {
@@ -67,16 +67,16 @@ export async function login(username: string, password: string): Promise<LoginRe
   setAuthToken(res.data.token);
 
   // เก็บ user
-  await AsyncStorage.setItem(
-    'user',
-    JSON.stringify(res.data.user),
-  );
+  // await AsyncStorage.setItem(
+  //   'user',
+  //   JSON.stringify(res.data.user),
+  // );
 
   // เก็บ token ไว้ด้วย เผื่อเปิดแอปใหม่
-  await AsyncStorage.setItem(
-    'token',
-    res.data.token,
-  );
+  // await AsyncStorage.setItem(
+  //   'token',
+  //   res.data.token,
+  // );
 
   return res.data;
 } catch (error: any) {
@@ -98,10 +98,10 @@ export async function login(username: string, password: string): Promise<LoginRe
 export async function logout(): Promise<void> {
   setAuthToken(null);
 
-  await AsyncStorage.multiRemove([
-    'token',
-    'user',
-  ]);
+  // await AsyncStorage.multiRemove([
+  //   'token',
+  //   'user',
+  // ]);
 }
 
 /**
