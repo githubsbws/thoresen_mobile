@@ -8,7 +8,9 @@ import { HomeModule } from './home/home.module';
 import { AboutModule } from './about/about.module';
 import { FaqModule } from './faq/faq.module';
 import { CourseModule } from './course/course.module';
-import { ReportModule } from './report/report.module';
+import {ReportModule} from './report/report.module';
+import { LibraryModule } from './library/library.module';
+import { NewsModule } from './news/news.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { ReportModule } from './report/report.module';
     FaqModule,
     CourseModule,
     ReportModule,
+    LibraryModule,
+    NewsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

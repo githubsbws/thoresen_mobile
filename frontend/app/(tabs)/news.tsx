@@ -1,25 +1,38 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+
 import AppHeader from '../../src/components/AppHeader';
 import { newsList, NewsItem } from '../../src/data/news';
+import { API_BASE_URL } from '../../src/services/api';
+
+// ============================================================================
+// THEME
+// ============================================================================
 
 const PRIMARY = '#001B74';
 const RED = '#E30613';
 const BG = '#F4F6FA';
 
+// รูป fallback สำหรับตอนที่ข่าวไม่มี cms_picture (image เป็น null จาก backend)
+// กันไม่ให้ <Image> พังตอน uri เป็น null/undefined
+const PLACEHOLDER_IMAGE =
+  'https://placehold.co/600x400/DDE1E8/768095?text=No+Image';
+
+// ============================================================================
+// MENU
+// ============================================================================
 
 const menuList = [
   { label: 'Home', route: '/(tabs)/Home' },
@@ -34,204 +47,497 @@ const menuList = [
   { label: 'Report', route: '/(tabs)/report' },
 ];
 
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
-  export default function NewsScreen() {
-    const [menuVisible, setMenuVisible] = useState(false);
-    const mainNews = newsList[0];
-    const otherNews = newsList.slice(1);
+export default function NewsScreen() {
+  // --------------------------------------------------------------------------
+  // UI State
+  // --------------------------------------------------------------------------
 
-   return (
+  const [menuVisible, setMenuVisible] = useState(false);
+
+  // --------------------------------------------------------------------------
+  // Data State
+  //
+  //
+  // เมื่อเชื่อม API จริง:
+  //  เปิด useEffect ด้านล่าง
+  // --------------------------------------------------------------------------
+
+  const [newsData, setNewsData] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [error, setError] = useState<string | null>(null);
+
+  // ==========================================================================
+  // API: FETCH NEWS
+  // ==========================================================================
+  
+  useEffect(() => {
+    const fetchNews = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        // --------------------------------------------------------------------
+        // TODO: เปิดใช้งานเมื่อ Backend API พร้อม 
+        //
+        // หมายเหตุ: path จริงของ backend คือ /v1/news (ไม่ใช่ /api/v1/news)
+        // เพราะ main.ts ตั้ง app.setGlobalPrefix('v1') ไว้ ให้เช็คให้ตรงกันเสมอ
+        //
+        // # URL เก็บใน env variable 
+        // 
+        // --------------------------------------------------------------------
+        //
+        const API_URL = API_BASE_URL;
+        const response = await fetch(`${API_URL}/news`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+
+        console.log('========== NEWS API DEBUG ==========');
+        console.log('NEWS API URL:', `${API_URL}/news`);
+        console.log('NEWS API STATUS:', response.status);
+        console.log('NEWS API SUCCESS:', result.success);
+        console.log('NEWS API DATA COUNT:', result.data?.length);
+
+        result.data?.forEach((item: NewsItem, index: number) => {
+          console.log(`NEWS [${index}]`);
+          console.log('  id:', item.id);
+          console.log('  title:', item.title);
+          console.log('  image:', item.image);
+        });
+        
+        if (!result.success) {
+          throw new Error('Unable to load news data');
+        }
+        
+        setNewsData(result.data);
+        
+      } catch (err) {
+        console.error('Fetch News Error:', err);
+
+        setError('ไม่สามารถโหลดข้อมูลข่าวสารได้');
+
+
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchNews();
+  }, []);
+
+  // ==========================================================================
+  // PREPARE DATA FOR UI
+  // ==========================================================================
+
+  /**
+   * ข่าวตัวแรกใช้เป็น Hero News
+   */
+  const mainNews = newsList[0];
+
+  /**
+   * ข่าวที่เหลือใช้แสดงใน Latest News
+   */
+  const otherNews = newsData.slice(1);
+
+  // ==========================================================================
+  // LOADING STATE
+  // ==========================================================================
+
+  if (isLoading && newsData.length === 0) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={PRIMARY} />
+
+          <Text style={styles.stateText}>
+            กำลังโหลดข่าวสาร...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ==========================================================================
+  // EMPTY STATE
+  // ==========================================================================
+
+  if (!mainNews) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <AppHeader />
+
+        <View style={styles.centerState}>
+          <Ionicons
+            name="newspaper-outline"
+            size={56}
+            color="#A0A8B8"
+          />
+
+          <Text style={styles.emptyTitle}>
+            No news available
+          </Text>
+
+          <Text style={styles.emptyText}>
+            ยังไม่มีข้อมูลข่าวสารในขณะนี้
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ==========================================================================
+  // MAIN UI
+  // ==========================================================================
+
+  return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-       <AppHeader />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ================================================================
+            HEADER
+        ================================================================= */}
+
+        <AppHeader />
+
         <View style={styles.content}>
-          
+
+          {/* ==============================================================
+              API ERROR
+          ================================================================= */}
+
+          {error && (
+            <View style={styles.errorBox}>
+              <Ionicons
+                name="warning-outline"
+                size={20}
+                color={RED}
+              />
+
+              <Text style={styles.errorText}>
+                {error}
+              </Text>
+            </View>
+          )}
+
+          {/* ==============================================================
+              HERO NEWS
+          ================================================================= */}
+
           <TouchableOpacity
-                style={styles.heroCard}
-                activeOpacity={0.9}
-                onPress={() => router.push(`/news/${mainNews.id}` as any)}
+            style={styles.heroCard}
+            activeOpacity={0.9}
+            onPress={() =>
+              router.push(`/news/${mainNews.id}` as any)
+            }
+          >
+            <Image
+              source={{ uri: mainNews.image || PLACEHOLDER_IMAGE }}
+              style={styles.heroImage}
+            />
+
+            <View style={styles.heroOverlay}>
+
+              <Text style={styles.heroBadge}>
+                {mainNews.category}
+              </Text>
+
+              <Text style={styles.heroTitle}>
+                {mainNews.title}
+              </Text>
+
+              <Text
+                style={styles.heroDetail}
+                numberOfLines={2}
               >
-                <Image source={{ uri: mainNews.image }} style={styles.heroImage} />
+                {mainNews.detail}
+              </Text>
 
-                <View style={styles.heroOverlay}>
-                  <Text style={styles.heroBadge}>{mainNews.category}</Text>
+              <View style={styles.heroBottom}>
+                <Text style={styles.heroDate}>
+                  {mainNews.date}
+                </Text>
 
-                  <Text style={styles.heroTitle}>
-                    {mainNews.title}
+                <View style={styles.readMoreRow}>
+                  <Text style={styles.readMoreText}>
+                    Read more
                   </Text>
 
-                  <Text style={styles.heroDetail} numberOfLines={2}>
-                    {mainNews.detail}
-                  </Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={14}
+                    color="#fff"
+                  />
+                </View>
+              </View>
 
-                  <View style={styles.heroBottom}>
-                    <Text style={styles.heroDate}>{mainNews.date}</Text>
+            </View>
+          </TouchableOpacity>
 
-                    <View style={styles.readMoreRow}>
-                      <Text style={styles.readMoreText}>Read more</Text>
-                      <Ionicons name="arrow-forward" size={14} color="#fff" />
-                    </View>
+          {/* ==============================================================
+              ABOUT NEWS
+          ================================================================= */}
+
+          <View style={styles.aboutBox}>
+            <Text style={styles.aboutTitle}>
+              Thoresen News & Updates
+            </Text>
+
+            <Text style={styles.aboutText}>
+              Stay updated with company announcements,
+              training courses, safety news, and learning
+              activities from THORESEN e-Learning.
+            </Text>
+          </View>
+
+          {/* ==============================================================
+              LATEST NEWS HEADER
+          ================================================================= */}
+
+          <View style={styles.sectionRow}>
+            <View>
+              <Text style={styles.sectionTitle}>
+                Latest News
+              </Text>
+
+              <Text style={styles.sectionSub}>
+                ข่าวสารและประกาศล่าสุด
+              </Text>
+            </View>
+          </View>
+
+          {/* ==============================================================
+              NEWS LIST
+          ================================================================= */}
+
+          <View style={styles.newsList}>
+            {otherNews.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.newsCard}
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.push(`/news/${item.id}` as any)
+                }
+              >
+                {/* News Image */}
+
+                <Image
+                  source={{ uri: item.image || PLACEHOLDER_IMAGE }}
+                  style={styles.newsImage}
+                />
+
+                {/* News Content */}
+
+                <View style={styles.newsContent}>
+
+                  <View style={styles.newsTop}>
+                    <Text style={styles.newsCategory}>
+                      {item.category}
+                    </Text>
+
+                    <Text style={styles.newsDate}>
+                      {item.date}
+                    </Text>
                   </View>
+
+                  <Text
+                    style={styles.newsTitle}
+                    numberOfLines={2}
+                  >
+                    {item.title}
+                  </Text>
+
+                  <View style={styles.newsBottom}>
+                    <Text
+                      style={styles.newsDetail}
+                      numberOfLines={2}
+                    >
+                      {item.detail}
+                    </Text>
+
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={PRIMARY}
+                    />
+                  </View>
+
                 </View>
               </TouchableOpacity>
+            ))}
+          </View>
 
-                    <View style={styles.aboutBox}>
-                      <Text style={styles.aboutTitle}>Thoresen News & Updates</Text>
-                      <Text style={styles.aboutText}>
-                        Stay updated with company announcements, training courses, safety news,
-                        and learning activities from THORESEN e-Learning.
-                      </Text>
-                    </View>
+          {/* ==============================================================
+              QUOTE
+          ================================================================= */}
 
-                    <View style={styles.sectionRow}>
-                      <View>
-                        <Text style={styles.sectionTitle}>Latest News</Text>
-                        <Text style={styles.sectionSub}>ข่าวสารและประกาศล่าสุด</Text>
-                      </View>
+          <View style={styles.quoteCard}>
+            <Ionicons
+              name="school-outline"
+              size={24}
+              color={PRIMARY}
+            />
 
-                    
-                    </View>
+            <Text style={styles.quoteText}>
+              “Learn well, grow well” is one of our core
+              values. We aim to encourage staff learning
+              and development within our organization.
+            </Text>
+          </View>
 
-                    <View style={styles.newsList}>
-                        {otherNews.map(item => (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={styles.newsCard}
-                            activeOpacity={0.85}
-                            onPress={() => router.push(`/news/${item.id}` as any)}
-                          >
-                            <Image
-                              source={{ uri: item.image }}
-                              style={styles.newsImage}
-                            />
+        </View>
 
-                            <View style={styles.newsContent}>
-                              <View style={styles.newsTop}>
-                                <Text style={styles.newsCategory}>
-                                  {item.category}
-                                </Text>
+        {/* ================================================================
+            FOOTER
+        ================================================================= */}
 
-                                <Text style={styles.newsDate}>
-                                  {item.date}
-                                </Text>
-                              </View>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            © 2026 Thoresen e-Learning
+          </Text>
+        </View>
 
-                              <Text
-                                style={styles.newsTitle}
-                                numberOfLines={2}
-                              >
-                                {item.title}
-                              </Text>
+      </ScrollView>
 
-                              <View style={styles.newsBottom}>
-                                <Text
-                                  style={styles.newsDetail}
-                                  numberOfLines={2}
-                                >
-                                  {item.detail}
-                                </Text>
+      {/* ==================================================================
+          MENU MODAL
+      =================================================================== */}
 
-                                <Ionicons
-                                  name="chevron-forward"
-                                  size={20}
-                                  color={PRIMARY}
-                                />
-                              </View>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <View style={styles.menuOverlay}>
 
-                          <View style={styles.quoteCard}>
-                            <Ionicons name="school-outline" size={24} color={PRIMARY} />
-                            <Text style={styles.quoteText}>
-                              “Learn well, grow well” is one of our core values. We aim to encourage
-                              staff learning and development within our organization.
-                            </Text>
-                          </View>
-                        </View>
+          {/* Click outside to close */}
 
-                        <View style={styles.footer}>
-                          <Text style={styles.footerText}>© 2026 Thoresen e-Learning</Text>
-                        </View>
-                      </ScrollView>
+          <TouchableOpacity
+            style={styles.menuBackdrop}
+            activeOpacity={1}
+            onPress={() => setMenuVisible(false)}
+          />
 
-                      <Modal
-                        visible={menuVisible}
-                        transparent
-                        animationType="slide"
-                        onRequestClose={() => setMenuVisible(false)}
-                      >
-                        <View style={styles.menuOverlay}>
-                          <TouchableOpacity
-                            style={styles.menuBackdrop}
-                            activeOpacity={1}
-                            onPress={() => setMenuVisible(false)}
-                          />
+          {/* Menu */}
 
-                          <View style={styles.menuBox}>
-                            <Text style={styles.menuTitle}>Menu</Text>
+          <View style={styles.menuBox}>
+            <Text style={styles.menuTitle}>
+              Menu
+            </Text>
 
-                            {menuList.map(item => (
-                              <TouchableOpacity
-                                key={item.label}
-                                style={styles.menuItem}
-                                onPress={() => {
-                                  setMenuVisible(false);
-                                  router.push(item.route as any);
-                                }}
-                              >
-                                <Text style={styles.menuItemText}>{item.label}</Text>
-                                <Ionicons name="chevron-forward" size={20} color="#64748B" />
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
-                      </Modal>
+            {menuList.map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                style={styles.menuItem}
+                onPress={() => {
+                  setMenuVisible(false);
 
-                      
-                    </SafeAreaView>
-                  );
-                }
+                  router.push(item.route as any);
+                }}
+              >
+                <Text style={styles.menuItemText}>
+                  {item.label}
+                </Text>
 
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color="#64748B"
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
 
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+// ============================================================================
+// STYLES
+// ============================================================================
 
 const styles = StyleSheet.create({
-
   safe: {
     flex: 1,
     backgroundColor: BG,
-  },
-
-  topHeader: {
-    height: 78,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  logo: {
-    width: 170,
-    height: 52,
   },
 
   content: {
     padding: 14,
   },
 
-  breadcrumb: {
-    fontSize: 10,
-    color: '#666',
+  // --------------------------------------------------------------------------
+  // Loading / Empty / Error
+  // --------------------------------------------------------------------------
+
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+
+  stateText: {
+    marginTop: 12,
+    color: '#596174',
+    fontSize: 14,
+  },
+
+  emptyTitle: {
+    marginTop: 14,
+    color: PRIMARY,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+
+  emptyText: {
+    marginTop: 6,
+    color: '#596174',
+    fontSize: 13,
+  },
+
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF0F0',
+    borderWidth: 1,
+    borderColor: '#FFD5D5',
+    borderRadius: 12,
+    padding: 12,
     marginBottom: 12,
   },
+
+  errorText: {
+    flex: 1,
+    color: RED,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // --------------------------------------------------------------------------
+  // Hero News
+  // --------------------------------------------------------------------------
 
   heroCard: {
     height: 210,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#ddd',
+    backgroundColor: '#DDD',
     marginBottom: 14,
   },
 
@@ -252,7 +558,7 @@ const styles = StyleSheet.create({
   heroBadge: {
     alignSelf: 'flex-start',
     backgroundColor: RED,
-    color: '#fff',
+    color: '#FFF',
     fontSize: 10,
     fontWeight: '800',
     paddingHorizontal: 10,
@@ -262,7 +568,7 @@ const styles = StyleSheet.create({
   },
 
   heroTitle: {
-    color: '#fff',
+    color: '#FFF',
     fontSize: 18,
     fontWeight: '900',
   },
@@ -275,14 +581,37 @@ const styles = StyleSheet.create({
   },
 
   heroDate: {
-    color: '#fff',
+    color: '#FFF',
     fontSize: 10,
     fontWeight: '700',
     marginTop: 8,
   },
 
+  heroBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+
+  readMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+
+  readMoreText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // --------------------------------------------------------------------------
+  // About
+  // --------------------------------------------------------------------------
+
   aboutBox: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
@@ -303,6 +632,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
+  // --------------------------------------------------------------------------
+  // Section
+  // --------------------------------------------------------------------------
+
   sectionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -322,59 +655,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  actionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-
-  adminBtn: {
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: PRIMARY,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-
-  adminActive: {
-    backgroundColor: RED,
-  },
-
-  adminText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-
-  addBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // --------------------------------------------------------------------------
+  // News List
+  // --------------------------------------------------------------------------
 
   newsList: {
     gap: 12,
   },
 
   newsCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 10,
     flexDirection: 'row',
     borderWidth: 1,
     borderColor: '#E4E8F0',
-    position: 'relative',
   },
 
   newsImage: {
     width: 92,
     height: 92,
     borderRadius: 13,
-    backgroundColor: '#ddd',
+    backgroundColor: '#DDD',
   },
 
   newsContent: {
@@ -409,24 +711,23 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  newsBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+
   newsDetail: {
+    flex: 1,
     fontSize: 11,
     color: '#666',
     lineHeight: 16,
     marginTop: 4,
   },
 
-  deleteBtn: {
-    position: 'absolute',
-    right: 8,
-    bottom: 8,
-    backgroundColor: '#FFF0F0',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // --------------------------------------------------------------------------
+  // Quote
+  // --------------------------------------------------------------------------
 
   quoteCard: {
     marginTop: 16,
@@ -446,6 +747,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
+  // --------------------------------------------------------------------------
+  // Footer
+  // --------------------------------------------------------------------------
+
   footer: {
     height: 42,
     backgroundColor: PRIMARY,
@@ -456,21 +761,14 @@ const styles = StyleSheet.create({
   },
 
   footerText: {
-    color: '#fff',
+    color: '#FFF',
     fontSize: 10,
     fontWeight: '700',
   },
-  
-  menuBtn: {
-  width: 52,
-  height: 52,
-  borderRadius: 14,
-  borderWidth: 2,
-  borderColor: PRIMARY,
-  backgroundColor: '#fff',
-  alignItems: 'center',
-  justifyContent: 'center',
-},
+
+  // --------------------------------------------------------------------------
+  // Menu
+  // --------------------------------------------------------------------------
 
   menuOverlay: {
     flex: 1,
@@ -489,7 +787,7 @@ const styles = StyleSheet.create({
     top: 92,
     right: 16,
     width: 280,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFF',
     borderRadius: 18,
     paddingVertical: 10,
     elevation: 10,
@@ -517,97 +815,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: PRIMARY,
-  },
-
-  modalBg: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    padding: 22,
-  },
-
-  modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 18,
-  },
-
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: PRIMARY,
-    marginBottom: 14,
-  },
-
-  input: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 44,
-    marginBottom: 10,
-  },
-
-  textArea: {
-    height: 110,
-    textAlignVertical: 'top',
-    paddingTop: 12,
-  },
-
-  modalActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-  },
-
-  cancelBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  saveBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: PRIMARY,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  cancelText: {
-    color: '#333',
-    fontWeight: '800',
-  },
-
-  saveText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-  heroBottom: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginTop: 8,
-  },
-
-  readMoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-
-  readMoreText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-
-  newsBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
   },
 });

@@ -1,3 +1,19 @@
+/**
+ * ============================================================
+ * app/course-result.tsx  —  หน้าสรุปผลสอบ (อยู่ที่ app/ ตรงๆ ไม่ใช่ในโฟลเดอร์)
+ * ============================================================
+ * สรุปสิ่งที่แก้ (ค้นหา [FIX] / [ADD])
+ * [FIX]  ไม่ fallback ไป courseId '1' เมื่อ param หาย (เดิมพาไปคอร์สแรกเงียบๆ) -> กลับหน้า Course แทน
+ * [FIX]  retryExam ส่ง lessonId ต่อไปด้วย (หน้า course/[id] เปิดหน้า exam ด้วย lessonId
+ *        เดิม retry ส่งแต่ chapter ทำให้สอบซ้ำแล้วหาบทไม่เจอ ถ้าหน้า exam ใช้ lessonId)
+ * [ADD]  param hasNext: ถ้าเป็นบทสุดท้ายไม่ขึ้นข้อความว่า "บทถัดไปถูกปลดล็อก"
+ * [ADD]  param passPercent: เกณฑ์ผ่านมาจากหน้า exam (เดิม hard-code 80%)
+ *
+ * [FIX]  ตอนนี้หน้า exam/[id].tsx ส่ง lessonId / passPercent มาจริงแล้ว (ต่อ backend จริงแล้ว)
+ *   ส่วน hasNext ยังไม่มีใครส่งมา (ดู TODO ในไฟล์ exam) จึงยังคง default เป็น true ไปก่อน
+ * ⚠ ข้อจำกัดที่ยังไม่ได้แก้: score / passed / details ถูกส่งผ่าน router params (client เป็นคนบอกผล)
+ *   และ details เป็น JSON ยาว ควรให้ server คำนวณผลสอบ แล้วหน้านี้ดึงผลด้วย attemptId
+ */
 import React, { useMemo } from 'react';
 import {
   View,
@@ -42,11 +58,17 @@ export default function CourseResultScreen() {
     passed?: string;
     examType?: 'pretest' | 'posttest';
     details?: string;
+    lessonId?: string; // [ADD]
+    hasNext?: string; // [ADD] 'false' = ไม่มีบทถัดไป
+    passPercent?: string; // [ADD] เกณฑ์ผ่าน (%)
   }>();
 
-  const courseId = String(params.courseId ?? '1');
+  // [FIX] เดิม ?? '1' -> ถ้า param หายจะไปคอร์สที่ 1
+  const courseId = String(params.courseId ?? '');
   const chapterNo = Number(params.chapter ?? 1);
   const nextChapter = Number(params.nextChapter ?? chapterNo + 1);
+  const hasNext = params.hasNext !== 'false'; // [ADD]
+  const passPercent = Number(params.passPercent ?? 80); // [ADD]
 
   const courseName = String(
     params.courseName ?? 'Course Examination'
@@ -97,6 +119,12 @@ export default function CourseResultScreen() {
 
 
   const goToCourseLessons = () => {
+    if (!courseId) {
+      // [FIX] ไม่มี courseId -> กลับหน้ารายการหลักสูตร
+      router.replace('/(tabs)/courses' as any);
+      return;
+    }
+
     router.replace({
       pathname: '/course/[id]',
       params: {
@@ -112,6 +140,8 @@ export default function CourseResultScreen() {
       params: {
         id: courseId,
         chapter: String(chapterNo),
+        // [FIX] ส่ง lessonId ต่อไปด้วย
+        ...(params.lessonId ? { lessonId: String(params.lessonId) } : {}),
         examType,
       },
     } as any);
@@ -150,7 +180,8 @@ export default function CourseResultScreen() {
       return 'ทำแบบทดสอบอีกครั้ง';
     }
 
-    return 'เรียนเรื่องต่อไป';
+    // [FIX] บทสุดท้ายไม่มี "เรื่องต่อไป"
+    return hasNext ? 'เรียนเรื่องต่อไป' : 'กลับไปหน้ารายการหลักสูตร';
   })();
 
   const mainButtonIcon = (() => {
@@ -302,8 +333,10 @@ export default function CourseResultScreen() {
                 {examType === 'pretest'
                   ? 'คะแนนนี้ใช้สำหรับวัดความรู้ก่อนเริ่มเรียน และไม่ส่งผลต่อการปลดล็อกบทถัดไป'
                   : passed
-                    ? `ทำแบบทดสอบหลังเรียนผ่านแล้ว บทที่ ${nextChapter} ถูกปลดล็อกเรียบร้อย`
-                    : 'ต้องได้อย่างน้อย 80% จึงจะผ่านและเปิดบทถัดไปได้'}
+                    ? hasNext
+                      ? `ทำแบบทดสอบหลังเรียนผ่านแล้ว บทที่ ${nextChapter} ถูกปลดล็อกเรียบร้อย`
+                      : 'ทำแบบทดสอบหลังเรียนผ่านแล้ว นี่คือบทสุดท้ายของหลักสูตร'
+                    : `ต้องได้อย่างน้อย ${passPercent}% จึงจะผ่านและเปิดบทถัดไปได้`}
               </Text>
             </View>
 
@@ -413,7 +446,9 @@ export default function CourseResultScreen() {
                     {examType === 'pretest'
                       ? 'กลับไปยังรายการหลักสูตร แล้วดูวิดีโอของบทนี้ให้จบก่อนทำแบบทดสอบหลังเรียน'
                       : passed
-                        ? `กลับไปยังรายการหลักสูตร แล้วเริ่มเรียนบทที่ ${nextChapter} ได้ทันที`
+                        ? hasNext
+                          ? `กลับไปยังรายการหลักสูตร แล้วเริ่มเรียนบทที่ ${nextChapter} ได้ทันที`
+                          : 'กลับไปยังรายการหลักสูตร เพื่อดูสรุปผลและทำแบบประเมิน'
                         : 'ทบทวนเนื้อหาแล้วกลับมาทำแบบทดสอบหลังเรียนอีกครั้ง'}
                   </Text>
                 </View>
